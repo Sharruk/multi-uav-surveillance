@@ -74,6 +74,17 @@ COMM_DELAY = 8
 BATT_DRAIN = 0.0025
 COVERAGE_R = 90
 
+# UAV physics
+MAX_SPEED     = 3.5
+MAX_ACCEL     = 0.22
+FRICTION      = 0.92
+MAX_TURN_RATE = 0.12
+
+# Crowd hotspots
+NUM_HOTSPOTS  = 4
+HOTSPOT_DRIFT = 0.18
+HOTSPOT_PULSE = 0.004
+
 BLDG_RECTS = [b[0] for b in BUILDINGS]
 
 def _in_building(x, y):
@@ -91,14 +102,66 @@ def _rand_open_pos():
     return PAD+SIM_W//2, TITLE_H+SIM_H//2
 
 
-class Person:
+class Hotspot:
+    """Drifting crowd-attraction centre with a pulsing weight."""
     def __init__(self):
         self.x, self.y = _rand_open_pos()
+        self.angle  = random.uniform(0, math.tau)
+        self.weight = random.uniform(0.5, 1.0)
+        self.phase  = random.uniform(0, math.tau)
+
+    def reset(self):
+        self.x, self.y = _rand_open_pos()
+        self.angle  = random.uniform(0, math.tau)
+        self.weight = random.uniform(0.5, 1.0)
+        self.phase  = random.uniform(0, math.tau)
+
+    def update(self):
+        self.phase  += HOTSPOT_PULSE
+        self.weight  = 0.5 + 0.5 * math.sin(self.phase)
+        if random.random() < 0.01:
+            self.angle += random.uniform(-0.5, 0.5)
+        nx = self.x + math.cos(self.angle) * HOTSPOT_DRIFT
+        ny = self.y + math.sin(self.angle) * HOTSPOT_DRIFT
+        if nx < PAD+20 or nx > PAD+SIM_W-20:
+            self.angle = math.pi - self.angle
+        if ny < TITLE_H+20 or ny > TITLE_H+SIM_H-20:
+            self.angle = -self.angle
+        nx = max(PAD+20, min(PAD+SIM_W-20, nx))
+        ny = max(TITLE_H+20, min(TITLE_H+SIM_H-20, ny))
+        if not _in_building(nx, ny):
+            self.x, self.y = nx, ny
+        else:
+            self.angle += math.pi * random.uniform(0.4, 0.8)
+
+    def draw(self, surf):
+        ix, iy = int(self.x), int(self.y)
+        r = int(40 + 20 * self.weight)
+        s = pygame.Surface((r*2, r*2), pygame.SRCALPHA)
+        pygame.draw.circle(s, (255, 200, 60, int(30+25*self.weight)), (r,r), r)
+        surf.blit(s, (ix-r, iy-r))
+        pygame.draw.circle(surf, (255,200,60), (ix,iy), 5, 1)
+        pygame.draw.line(surf, (255,200,60), (ix-12,iy), (ix+12,iy), 1)
+        pygame.draw.line(surf, (255,200,60), (ix,iy-12), (ix,iy+12), 1)
+
+
+class Person:
+    def __init__(self, hx=None, hy=None):
+        if hx is not None:
+            for _ in range(40):
+                x = max(PAD+8, min(PAD+SIM_W-8, hx + random.gauss(0, 22)))
+                y = max(TITLE_H+8, min(TITLE_H+SIM_H-8, hy + random.gauss(0, 22)))
+                if not _in_building(x, y):
+                    self.x, self.y = x, y; break
+            else:
+                self.x, self.y = _rand_open_pos()
+        else:
+            self.x, self.y = _rand_open_pos()
         self.angle = random.uniform(0, math.tau)
         self.spd   = PERSON_SPD * random.uniform(0.6, 1.4)
         self.wander_timer = random.randint(0, 60)
 
-    def update(self, others):
+    def update(self, others, hotspots):
         self.wander_timer -= 1
         if self.wander_timer <= 0:
             self.angle += random.uniform(-0.9, 0.9)
@@ -126,6 +189,12 @@ class Person:
             alx  = ax/n*0.04; aly = ay/n*0.04
             self.angle += math.atan2(cohy+aly+sy*0.05, cohx+alx+sx*0.05)*0.3
 
+        # Hotspot attraction
+        if hotspots:
+            hs = min(hotspots, key=lambda h: math.hypot(self.x-h.x, self.y-h.y))
+            ha = math.atan2(hs.y - self.y, hs.x - self.x)
+            self.angle += math.sin(ha - self.angle) * hs.weight * 0.06
+
         self.angle = self.angle % math.tau
         nx = self.x + math.cos(self.angle)*self.spd
         ny = self.y + math.sin(self.angle)*self.spd
@@ -144,21 +213,44 @@ class Person:
 
 class CrowdSystem:
     def __init__(self):
-        self.people = [Person() for _ in range(NUM_PEOPLE)]
-        self.center = (SIM_W//2, TITLE_H+SIM_H//2)
-        self.density = 0.0
+        self.hotspots = [Hotspot() for _ in range(NUM_HOTSPOTS)]
+        self.people   = []
+        per_hs = NUM_PEOPLE // NUM_HOTSPOTS
+        for hs in self.hotspots:
+            for _ in range(per_hs):
+                self.people.append(Person(hs.x, hs.y))
+        while len(self.people) < NUM_PEOPLE:
+            self.people.append(Person())
+        self.center         = (SIM_W//2, TITLE_H+SIM_H//2)
+        self.density        = 0.0
+        self.monitored      = 0.0
+        self.hotspot_counts = [0] * NUM_HOTSPOTS
 
-    def update(self):
+    def update(self, drones=None):
+        for hs in self.hotspots:
+            hs.update()
         for p in self.people:
-            p.update(self.people)
+            p.update(self.people, self.hotspots)
         xs = [p.x for p in self.people]
         ys = [p.y for p in self.people]
-        self.center = (sum(xs)/len(xs), sum(ys)/len(ys))
+        self.center  = (sum(xs)/len(xs), sum(ys)/len(ys))
         cx, cy = self.center
         self.density = sum(1 for p in self.people
                           if math.hypot(p.x-cx,p.y-cy)<80) / NUM_PEOPLE
+        for i, hs in enumerate(self.hotspots):
+            self.hotspot_counts[i] = sum(
+                1 for p in self.people if math.hypot(p.x-hs.x,p.y-hs.y)<70)
+        if drones:
+            self.monitored = sum(
+                1 for p in self.people
+                if any(math.hypot(p.x-d.x,p.y-d.y)<COVERAGE_R for d in drones)
+            ) / NUM_PEOPLE * 100
+        else:
+            self.monitored = 0.0
 
     def draw(self, surf):
+        for hs in self.hotspots:
+            hs.draw(surf)
         cx, cy = int(self.center[0]), int(self.center[1])
         r = 28
         s = pygame.Surface((r*2,r*2), pygame.SRCALPHA)
@@ -178,10 +270,11 @@ class Drone:
         self.name   = DRONE_NAMES[idx]
         self.color  = DRONE_COLORS[idx]
         self.crowd  = crowd
-        sx, sy = _rand_open_pos()
         self.x = float(ZONES[idx]["rect"].centerx)
         self.y = float(ZONES[idx]["rect"].centery)
         self.vx = self.vy = 0.0
+        self.ax = self.ay = 0.0
+        self.heading = 0.0
         self.tx = self.x
         self.ty = self.y
         self.target_buf = deque(maxlen=COMM_DELAY)
@@ -204,6 +297,8 @@ class Drone:
         self.x = float(ZONES[self.idx]["rect"].centerx)
         self.y = float(ZONES[self.idx]["rect"].centery)
         self.vx = self.vy = 0.0
+        self.ax = self.ay = 0.0
+        self.heading = 0.0
         self.tx = self.x; self.ty = self.y
         self.target_buf = deque(maxlen=COMM_DELAY)
         for _ in range(COMM_DELAY):
@@ -254,13 +349,25 @@ class Drone:
         dy = self.ty - py
         d  = math.hypot(dx, dy)
 
+        top_spd = MAX_SPEED * (0.5 if self.battery < 15 else 1.0)
         if d < ARRIVE_D:
-            self.vx *= 0.85; self.vy *= 0.85
+            self.vx *= FRICTION; self.vy *= FRICTION
             self.status = "On-Station"
         else:
-            spd = DRONE_SPD * (0.5 if self.battery < 15 else 1.0)
-            self.vx = (dx/d)*spd
-            self.vy = (dy/d)*spd
+            desired_vx = (dx/d) * top_spd
+            desired_vy = (dy/d) * top_spd
+            self.ax = desired_vx - self.vx
+            self.ay = desired_vy - self.vy
+            a_mag = math.hypot(self.ax, self.ay)
+            if a_mag > MAX_ACCEL:
+                self.ax = self.ax/a_mag*MAX_ACCEL
+                self.ay = self.ay/a_mag*MAX_ACCEL
+            self.vx = (self.vx + self.ax) * FRICTION
+            self.vy = (self.vy + self.ay) * FRICTION
+            spd = math.hypot(self.vx, self.vy)
+            if spd > top_spd:
+                self.vx = self.vx/spd*top_spd
+                self.vy = self.vy/spd*top_spd
             self.status = "Tracking"
 
         avoiding = False
@@ -299,6 +406,13 @@ class Drone:
             self.status = "RTB"
             self.vx *= 0.3; self.vy *= 0.3
 
+        # Smooth heading toward velocity direction
+        _spd = math.hypot(self.vx, self.vy)
+        if _spd > 0.05:
+            th = math.atan2(self.vy, self.vx)
+            dh = (th - self.heading + math.pi) % math.tau - math.pi
+            self.heading = (self.heading + max(-MAX_TURN_RATE, min(MAX_TURN_RATE, dh))) % math.tau
+
         prev_x, prev_y = self.x, self.y
         self.x += self.vx
         self.y += self.vy
@@ -309,26 +423,32 @@ class Drone:
     def draw(self, surf, font_xs):
         ix, iy = int(self.x), int(self.y)
         tx, ty = int(self.tx), int(self.ty)
-        # dashed line to target
         _draw_dash(surf, self.color, (ix,iy),(tx,ty))
-        # body
-        pygame.draw.circle(surf, self.color, (ix,iy), DRONE_R)
-        pygame.draw.circle(surf, (200,215,255),(ix,iy), DRONE_R, 2)
-        # heading tick
-        spd = math.hypot(self.vx, self.vy)
-        if spd > 0.05:
-            ex = ix + int(self.vx/spd*(DRONE_R+5))
-            ey = iy + int(self.vy/spd*(DRONE_R+5))
+        # Quadrotor arms at ±45° and ±135° from heading
+        arm_len = DRONE_R + 5
+        dark = tuple(max(0, c-70) for c in self.color)
+        for ang in (self.heading+math.pi/4, self.heading-math.pi/4,
+                    self.heading+3*math.pi/4, self.heading-3*math.pi/4):
+            ex2 = ix + int(math.cos(ang)*arm_len)
+            ey2 = iy + int(math.sin(ang)*arm_len)
+            pygame.draw.line(surf, dark, (ix,iy), (ex2,ey2), 2)
+            pygame.draw.circle(surf, dark, (ex2,ey2), 4)
+        # Body core
+        pygame.draw.circle(surf, self.color, (ix,iy), DRONE_R-2)
+        pygame.draw.circle(surf, (200,215,255), (ix,iy), DRONE_R-2, 2)
+        # Heading arrow
+        if math.hypot(self.vx, self.vy) > 0.05:
+            ex = ix + int(math.cos(self.heading)*(DRONE_R+7))
+            ey = iy + int(math.sin(self.heading)*(DRONE_R+7))
             pygame.draw.line(surf,(255,255,255),(ix,iy),(ex,ey),2)
-        # coverage ring
+        # Coverage ring
         s2 = pygame.Surface((COVERAGE_R*2,COVERAGE_R*2),pygame.SRCALPHA)
-        rc = (*self.color, 18)
-        pygame.draw.circle(s2,rc,(COVERAGE_R,COVERAGE_R),COVERAGE_R)
+        pygame.draw.circle(s2,(*self.color,18),(COVERAGE_R,COVERAGE_R),COVERAGE_R)
         surf.blit(s2,(ix-COVERAGE_R,iy-COVERAGE_R))
         pygame.draw.circle(surf,(*self.color,80),(ix,iy),COVERAGE_R,1)
-        # label
+        # Label
         lbl = font_xs.render(self.name, True, self.color)
-        surf.blit(lbl,(ix-lbl.get_width()//2, iy-DRONE_R-14))
+        surf.blit(lbl,(ix-lbl.get_width()//2, iy-DRONE_R-18))
 
 
 # ── Drawing Helpers ──────────────────────────────────────────────────────────
@@ -435,6 +555,7 @@ def draw_panel(surf, fh, fsm, fxs, drones, crowd, metrics, elapsed, paused):
     row("Status", "PAUSED" if paused else "RUNNING",
         vc=C_TEXT_WARN if paused else C_TEXT_OK)
     row("Crowd Density",      f"{crowd.density*100:.0f}%")
+    row("Monitored",          f"{crowd.monitored:.0f}%", vc=C_TEXT_ACT)
     ccx,ccy=crowd.center
     row("Crowd Center",       f"({ccx:.0f}, {ccy-TITLE_H:.0f})")
 
@@ -446,6 +567,11 @@ def draw_panel(surf, fh, fsm, fxs, drones, crowd, metrics, elapsed, paused):
     row("Wind Speed",         f"{metrics['wind_spd']:.3f} m/s")
     row("GPS Noise",          f"±{GPS_NOISE:.1f}px")
     row("Comm Delay",         f"{COMM_DELAY} frames")
+
+    sec("Crowd Hotspots")
+    for i, cnt in enumerate(crowd.hotspot_counts):
+        row(f"  Hotspot {i+1}", f"{cnt} people",
+            vc=C_TEXT_WARN if cnt > NUM_PEOPLE//4 else C_TEXT_PRI)
 
     sec("UAV Fleet Status")
     bar_w = PANEL_W - mg*2 - 55
@@ -466,9 +592,12 @@ def draw_panel(surf, fh, fsm, fxs, drones, crowd, metrics, elapsed, paused):
         pygame.draw.rect(surf,bc2,(px+mg,y,fill,7),border_radius=2)
         bv=fxs.render(f"{d.battery:.0f}%",True,bc2)
         surf.blit(bv,(px+mg+bar_w+4,y-1)); y+=11
-        # Distance
-        dv=fxs.render(f"Dist: {d.distance*0.1:.0f}m | Avoid: {d.collision_avoids}",True,C_TEXT_SEC)
-        surf.blit(dv,(px+mg,y)); y+=dv.get_height()+5
+        # Speed + Distance
+        spd_px = math.hypot(d.vx, d.vy)
+        sv=fxs.render(f"Spd: {spd_px:.2f} px/f | Dist: {d.distance*0.1:.0f}m",True,C_TEXT_SEC)
+        surf.blit(sv,(px+mg,y)); y+=sv.get_height()+2
+        av=fxs.render(f"Avoid events: {d.collision_avoids}",True,C_TEXT_SEC)
+        surf.blit(av,(px+mg,y)); y+=av.get_height()+5
 
     y=py+SIM_H-28
     pygame.draw.line(surf,C_PANEL_LINE,(px+mg,y),(px+PANEL_W-mg,y),1)
@@ -538,7 +667,7 @@ def main():
                 if ev.key==pygame.K_p:      paused=not paused
 
         if not paused:
-            crowd.update()
+            crowd.update(drones)
             for d in drones:
                 d.update(drones, col_ref)
             metrics["collisions"]=col_ref[0]

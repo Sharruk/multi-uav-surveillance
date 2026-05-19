@@ -32,7 +32,7 @@ from simulation.config import (
 )
 from simulation.environment.city_map import ZONES
 from simulation.algorithms.collision_avoidance import rule_based_avoidance
-from simulation.algorithms.path_planning       import coverage_offset_planner
+from simulation.algorithms.path_planning       import follower_planner
 from simulation.algorithms.communication       import CommBuffer, GPSSensor, WindModel
 
 
@@ -74,8 +74,13 @@ class Drone:
         self.ty = self.y
 
         # Pluggable algorithms
-        self.planner_fn   = coverage_offset_planner
+        self.planner_fn   = follower_planner
         self.avoidance_fn = rule_based_avoidance
+
+        # Leader-follower state (managed by LeaderFollowerSystem)
+        self.is_leader   = (idx == 0)
+        self.comm_active = True
+        self.leader_ref  = None
 
         # Sensor / comms sub-systems
         self._comm   = CommBuffer(crowd.center)
@@ -104,6 +109,9 @@ class Drone:
         self.distance         = 0.0
         self.status           = "Tracking"
         self.collision_avoids = 0
+        self.is_leader        = (self.idx == 0)
+        self.comm_active      = True
+        self.leader_ref       = None
 
     # ── Sensor accessors ──────────────────────────────────────────────────────
 
@@ -119,12 +127,14 @@ class Drone:
 
     # ── Update ────────────────────────────────────────────────────────────────
 
-    def update(self, all_drones: list, col_ref: list) -> None:
+    def update(self, all_drones: list, col_ref: list,
+               obstacles: list | None = None) -> None:
         """Advance drone by one simulation frame.
 
         Args:
             all_drones: full fleet list (for avoidance)
             col_ref:    mutable [int] shared avoidance event counter
+            obstacles:  optional list of DynamicObstacle instances
         """
         # 1. Battery drain
         self.battery = max(0.0, self.battery - BATT_DRAIN)
@@ -165,8 +175,8 @@ class Drone:
                 self.vy = self.vy / spd * top_spd
             self.status = "Tracking"
 
-        # 5. Collision avoidance
-        dvx, dvy, avoiding = self.avoidance_fn(self, all_drones, col_ref)
+        # 5. Collision avoidance (drones + buildings + dynamic obstacles)
+        dvx, dvy, avoiding = self.avoidance_fn(self, all_drones, col_ref, obstacles)
         self.vx += dvx
         self.vy += dvy
         if avoiding:

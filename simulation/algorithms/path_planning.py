@@ -23,7 +23,7 @@ PLANNED ALGORITHMS (stubs provided)
 - qlearning_planner      → Q-learning reinforcement learning (placeholder)
 """
 
-from simulation.config import DRONE_NAMES
+from simulation.config import DRONE_NAMES, FORMATION_OFFSETS
 
 
 # ── Coverage offset planner (active) ──────────────────────────────────────────
@@ -45,6 +45,35 @@ def coverage_offset_planner(drone, delayed_center: tuple[float, float]) -> tuple
     ox, oy = _COVERAGE_OFFSETS[drone.idx]
     cx, cy = delayed_center
     return cx + ox, cy + oy
+
+
+def follower_planner(drone, delayed_center: tuple[float, float]) -> tuple[float, float]:
+    """Leader-follower planner.
+
+    - Leader drones use coverage_offset_planner (navigate toward crowd).
+    - Followers within COMM_RADIUS of leader track the leader's position
+      with a small formation offset so they cluster around it.
+    - Followers outside COMM_RADIUS fall back to independent navigation.
+
+    Args:
+        drone:          Drone instance (checks drone.is_leader, drone.comm_active,
+                        drone.leader_ref)
+        delayed_center: comms-delayed crowd centre (used for fallback)
+
+    Returns:
+        (tx, ty): target position
+    """
+    is_leader   = getattr(drone, 'is_leader',   True)
+    comm_active = getattr(drone, 'comm_active',  True)
+    leader_ref  = getattr(drone, 'leader_ref',   None)
+
+    if is_leader or not comm_active or leader_ref is None:
+        # Independent navigation
+        return coverage_offset_planner(drone, delayed_center)
+
+    # Follow leader with formation offset
+    ox, oy = FORMATION_OFFSETS[drone.idx]
+    return leader_ref.x + ox, leader_ref.y + oy
 
 
 # ── Stubs ──────────────────────────────────────────────────────────────────────

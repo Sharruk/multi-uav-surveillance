@@ -17,13 +17,16 @@ from simulation.config import (
     WIN_W, WIN_H, FPS, SIM_W, SIM_H, TITLE_H, PAD,
     C_BG, C_PANEL_LINE,
 )
-from simulation.crowd.crowd_system         import CrowdSystem
-from simulation.drone.drone                import Drone
-from simulation.metrics.analytics          import calc_metrics
-from simulation.visualization.renderer    import (
+from simulation.crowd.crowd_system                  import CrowdSystem
+from simulation.drone.drone                         import Drone
+from simulation.drone.leader_follower               import LeaderFollowerSystem
+from simulation.environment.dynamic_obstacles       import create_obstacles, reset_obstacles
+from simulation.metrics.analytics                   import calc_metrics
+from simulation.visualization.renderer             import (
     draw_roads, draw_buildings, draw_zones, draw_title,
+    draw_obstacles, draw_comm_links,
 )
-from simulation.visualization.panel       import draw_panel
+from simulation.visualization.panel                import draw_panel
 
 
 class SimulationRunner:
@@ -44,15 +47,17 @@ class SimulationRunner:
         self.fxs = pygame.font.SysFont("consolas", 10)
 
         # Simulation state
-        self.crowd   = CrowdSystem()
-        self.drones  = [Drone(i, self.crowd) for i in range(self.NUM_DRONES)]
-        self.col_ref = [0]   # mutable avoidance event counter (shared across drones)
-        self.metrics = {
-            "collisions": 0,
-            "coverage":   0.0,
-            "accuracy":   100.0,
-            "total_dist": 0.0,
-            "wind_spd":   0.0,
+        self.crowd     = CrowdSystem()
+        self.drones    = [Drone(i, self.crowd) for i in range(self.NUM_DRONES)]
+        self.obstacles = create_obstacles()
+        self.lf_system = LeaderFollowerSystem(self.drones)
+        self.col_ref   = [0]
+        self.metrics   = {
+            "collisions":  0,
+            "coverage":    0.0,
+            "accuracy":    100.0,
+            "total_dist":  0.0,
+            "wind_spd":    0.0,
         }
         self.sim_start    = time.time()
         self.paused       = False
@@ -63,6 +68,8 @@ class SimulationRunner:
         self.crowd = CrowdSystem()
         for d in self.drones:
             d.reset(self.crowd)
+        reset_obstacles(self.obstacles)
+        self.lf_system.reset(self.drones)
         self.col_ref[0] = 0
         self.metrics.update(
             collisions=0, coverage=0.0, accuracy=100.0,
@@ -87,9 +94,15 @@ class SimulationRunner:
 
     def _update(self) -> None:
         """Advance all simulation subsystems by one frame."""
+        # 1. Leader-follower: elect / update flags before drones move
+        self.lf_system.update(self.drones)
+        # 2. Crowd + environment
         self.crowd.update(self.drones)
+        for obs in self.obstacles:
+            obs.update()
+        # 3. Drone physics + avoidance
         for d in self.drones:
-            d.update(self.drones, self.col_ref)
+            d.update(self.drones, self.col_ref, self.obstacles)
         self.metrics["collisions"] = self.col_ref[0]
         self.metric_timer += 1
         if self.metric_timer >= 30:
@@ -103,14 +116,17 @@ class SimulationRunner:
 
         draw_roads(self.screen)
         draw_zones(self.screen, self.fsm)
+        draw_obstacles(self.screen, self.obstacles)       # vehicles + construction
         self.crowd.draw(self.screen)
         draw_buildings(self.screen, self.fsm, self.fxs)
+        draw_comm_links(self.screen, self.drones, self.lf_system)   # comm network
 
         for d in self.drones:
             d.draw(self.screen, self.fxs)
 
         draw_panel(self.screen, self.fh, self.fsm, self.fxs,
-                   self.drones, self.crowd, self.metrics, elapsed, self.paused)
+                   self.drones, self.crowd, self.metrics, elapsed,
+                   self.paused, self.lf_system)
         draw_title(self.screen, self.ft, self.fxs)
 
         fps_t = self.fxs.render(f"FPS:{int(self.clock.get_fps())}", True, (55, 70, 100))

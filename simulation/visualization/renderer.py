@@ -18,6 +18,7 @@ from simulation.config import (
     PAD, C_ROAD, C_ROAD_MARK,
     C_BLDG_FILL, C_BLDG_BORDER, C_BLDG_LABEL,
     C_TITLE_BG, C_PANEL_LINE, C_TEXT_PRI, C_TEXT_SEC,
+    COMM_RADIUS,
 )
 from simulation.environment.city_map import V_ROADS, H_ROADS, BUILDINGS, ZONES
 
@@ -104,3 +105,66 @@ def draw_title(surf, ft, fxs) -> None:
     surf.blit(t, (12, TITLE_H // 2 - t.get_height() // 2))
     s = fxs.render("Research Prototype  |  Python + Pygame", True, C_TEXT_SEC)
     surf.blit(s, (WIN_W - s.get_width() - 10, TITLE_H // 2 - s.get_height() // 2))
+
+
+# ── Dynamic obstacles ───────────────────────────────────────────────────────────
+
+def draw_obstacles(surf, obstacles: list) -> None:
+    """Draw all dynamic obstacles (vehicles and construction zones)."""
+    for obs in obstacles:
+        obs.draw(surf)
+
+
+# ── Leader-follower visualisation ───────────────────────────────────────────────
+
+def draw_comm_links(surf, drones: list, lf_system) -> None:
+    """Draw communication network: links, leader indicator, comm radius.
+
+    Renders:
+      - Semi-transparent comm-radius ring around the leader
+      - Thin coloured lines between UAV pairs within COMM_RADIUS
+      - Gold halo + crown icon on the current leader drone
+      - Flash ring when a leader switch occurs
+    """
+    if not drones:
+        return
+    leader = drones[lf_system.leader_idx]
+    lx, ly = int(leader.x), int(leader.y)
+
+    # 1. Comm-radius ring around leader
+    cr = COMM_RADIUS
+    rs = pygame.Surface((cr * 2, cr * 2), pygame.SRCALPHA)
+    pygame.draw.circle(rs, (100, 200, 255, 18), (cr, cr), cr)
+    surf.blit(rs, (lx - cr, ly - cr))
+    pygame.draw.circle(surf, (100, 200, 255, 80), (lx, ly), cr, 1)
+
+    # 2. Comm links between all pairs within COMM_RADIUS
+    for a, b in lf_system.comm_links(drones):
+        ax, ay = int(a.x), int(a.y)
+        bx, by = int(b.x), int(b.y)
+        link_surf = pygame.Surface(surf.get_size(), pygame.SRCALPHA)
+        pygame.draw.line(link_surf, (100, 200, 255, 60), (ax, ay), (bx, by), 1)
+        surf.blit(link_surf, (0, 0))
+
+    # 3. Leader gold halo
+    if lf_system.leader_switched:
+        # Flash: alternate colour
+        flash_col = (255, 255, 100, 100) if (lf_system.switch_flash // 8) % 2 == 0 \
+                    else (255, 180, 0, 60)
+        fs = pygame.Surface((40, 40), pygame.SRCALPHA)
+        pygame.draw.circle(fs, flash_col, (20, 20), 20)
+        surf.blit(fs, (lx - 20, ly - 20))
+
+    pygame.draw.circle(surf, (255, 215, 0), (lx, ly), 16, 2)   # gold ring
+
+    # 4. "L" crown badge above leader
+    badge_x, badge_y = lx - 4, ly - 30
+    pygame.draw.polygon(surf, (255, 215, 0), [
+        (badge_x,      badge_y + 8),
+        (badge_x + 8,  badge_y + 8),
+        (badge_x + 8,  badge_y),
+        (badge_x + 6,  badge_y + 4),
+        (badge_x + 4,  badge_y),
+        (badge_x + 2,  badge_y + 4),
+        (badge_x,      badge_y),
+    ])

@@ -87,3 +87,17 @@ COVERAGE_R = 90    # drone sensor coverage radius (px)
 #       simulation.environment.city_map (they require pygame.Rect at import time).
 #       Import them from there, not from here.
 
+# ── Dynamic obstacles ──────────────────────────────────────────────────────────
+NUM_VEHICLES       = 3       # number of moving vehicles on roads
+NUM_CONSTRUCTION   = 2       # number of construction zones
+VEHICLE_SPD        = 1.2     # vehicle speed (px/frame)
+VEHICLE_R          = 18      # vehicle avoidance radius (px)
+CONSTRUCTION_R     = 32      # construction zone avoidance radius (px)
+CONSTRUCTION_LIFE  = 600     # frames before a construction zone relocates
+
+# ── Leader-follower coordination ───────────────────────────────────────────────
+COMM_RADIUS        = 220     # UAV communication radius (px)
+FORMATION_OFFSETS  = [(0, 0), (60, 0), (-60, 0), (0, 60)]   # follower offsets from leader
+LEADER_LOW_BATT    = 20.0    # battery % threshold that triggers leader handover
+
+

@@ -27,13 +27,15 @@ from simulation.config import (
 from simulation.environment.city_map import BLDG_RECTS
 
 
-def rule_based_avoidance(drone, all_drones: list, col_ref: list) -> tuple[float, float, bool]:
+def rule_based_avoidance(drone, all_drones: list, col_ref: list,
+                         obstacles: list | None = None) -> tuple[float, float, bool]:
     """Apply rule-based repulsion forces.
 
     Args:
         drone:      the Drone instance to compute forces for
         all_drones: full list of Drone instances
         col_ref:    mutable [int] counter for collision avoidance events
+        obstacles:  optional list of DynamicObstacle instances
 
     Returns:
         (dvx, dvy, avoiding): velocity delta and whether avoidance is active
@@ -65,6 +67,19 @@ def rule_based_avoidance(drone, all_drones: list, col_ref: list) -> tuple[float,
             s = (AVOID_O_R - dd) / AVOID_O_R * AVOID_O_S
             dvx += s * (drone.x - cx) / dd
             dvy += s * (drone.y - cy) / dd
+
+    # Dynamic obstacle repulsion (vehicles + construction zones)
+    if obstacles:
+        for obs in obstacles:
+            if not getattr(obs, 'is_active', True):
+                continue
+            dd = math.hypot(drone.x - obs.x, drone.y - obs.y)
+            avoid_r = obs.radius + 30     # extra buffer around dynamic obstacles
+            if 0 < dd < avoid_r:
+                avoiding = True
+                s = (avoid_r - dd) / avoid_r * 3.5
+                dvx += s * (drone.x - obs.x) / dd
+                dvy += s * (drone.y - obs.y) / dd
 
     return dvx, dvy, avoiding
 

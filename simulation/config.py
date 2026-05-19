@@ -36,6 +36,7 @@ C_TEXT_OK     = (75,  210, 130)
 C_TEXT_WARN   = (255, 180,  50)
 C_TEXT_ACT    = (100, 180, 255)
 C_TEXT_ERR    = (255,  90,  80)
+C_TEXT_LOG    = (160, 180, 220)
 C_CROWD       = (255, 220, 100)
 
 # ── Drone identity ─────────────────────────────────────────────────────────────
@@ -61,6 +62,13 @@ AVOID_D_R = 65   # drone-drone repulsion radius (px)
 AVOID_D_S = 2.0  # drone-drone repulsion strength
 AVOID_O_R = 62   # obstacle repulsion radius (px)
 AVOID_O_S = 3.2  # obstacle repulsion strength
+AVOID_PF_S = 0.5 # potential field avoidance strength
+AVOID_VO_TAU = 30# velocity obstacle time horizon (frames)
+
+# ── Path Planning ──────────────────────────────────────────────────────────────
+GRID_CELL_SIZE = 30   # A* / Dijkstra grid resolution (px)
+PF_ATTRACT_S   = 0.05 # potential field attractive strength
+PF_REPEL_S     = 2.0  # potential field repulsive strength
 
 # ── Crowd / boid parameters ────────────────────────────────────────────────────
 NUM_PEOPLE = 30

@@ -24,9 +24,18 @@ from simulation.environment.dynamic_obstacles       import create_obstacles, res
 from simulation.metrics.analytics                   import calc_metrics
 from simulation.visualization.renderer             import (
     draw_roads, draw_buildings, draw_zones, draw_title,
-    draw_obstacles, draw_comm_links,
+    draw_obstacles, draw_comm_links, draw_paths
 )
 from simulation.visualization.panel                import draw_panel
+
+from simulation.algorithms.collision_avoidance import (
+    rule_based_avoidance, potential_field_avoidance, 
+    velocity_obstacle_avoidance, rvo_avoidance
+)
+from simulation.algorithms.path_planning import (
+    coverage_offset_planner, follower_planner, astar_planner, 
+    dijkstra_planner, potential_field_planner, qlearning_planner, hybrid_planner
+)
 
 
 class SimulationRunner:
@@ -62,6 +71,9 @@ class SimulationRunner:
         self.sim_start    = time.time()
         self.paused       = False
         self.metric_timer = 0
+        self.event_log    = ["Simulation started"]
+        self.active_avoidance = "Rule-based"
+        self.active_planner   = "Follower Planner"
 
     def reset(self) -> None:
         """Full simulation reset (SPACE key)."""
@@ -90,12 +102,53 @@ class SimulationRunner:
                     self.reset()
                 if ev.key == pygame.K_p:
                     self.paused = not self.paused
+                
+                # Collision Avoidance Hot-swaps
+                if ev.key == pygame.K_1:
+                    self._set_avoidance("Rule-based", rule_based_avoidance)
+                elif ev.key == pygame.K_2:
+                    self._set_avoidance("Potential Field", potential_field_avoidance)
+                elif ev.key == pygame.K_3:
+                    self._set_avoidance("Velocity Obstacle", velocity_obstacle_avoidance)
+                elif ev.key == pygame.K_4:
+                    self._set_avoidance("RVO", rvo_avoidance)
+                
+                # Path Planning Hot-swaps
+                elif ev.key == pygame.K_5:
+                    self._set_planner("Follower Planner", follower_planner)
+                elif ev.key == pygame.K_6:
+                    self._set_planner("A* Planner", astar_planner)
+                elif ev.key == pygame.K_7:
+                    self._set_planner("Dijkstra Planner", dijkstra_planner)
+                elif ev.key == pygame.K_8:
+                    self._set_planner("Potential Field Planner", potential_field_planner)
+                elif ev.key == pygame.K_9:
+                    self._set_planner("Hybrid Planner", hybrid_planner)
+                elif ev.key == pygame.K_0:
+                    self._set_planner("Q-Learning", qlearning_planner)
         return True
+
+    def _set_avoidance(self, name: str, fn) -> None:
+        if self.active_avoidance != name:
+            self.active_avoidance = name
+            for d in self.drones:
+                d.avoidance_fn = fn
+            self.event_log.append(f"Avoidance -> {name}")
+
+    def _set_planner(self, name: str, fn) -> None:
+        if self.active_planner != name:
+            self.active_planner = name
+            for d in self.drones:
+                d.planner_fn = fn
+            self.event_log.append(f"Planner -> {name}")
 
     def _update(self) -> None:
         """Advance all simulation subsystems by one frame."""
         # 1. Leader-follower: elect / update flags before drones move
         self.lf_system.update(self.drones)
+        if self.lf_system.switch_flash == 240: # Just switched
+            self.event_log.append(f"Leader switched to {self.drones[self.lf_system.leader_idx].name}")
+            
         # 2. Crowd + environment
         self.crowd.update(self.drones)
         for obs in self.obstacles:
@@ -120,13 +173,16 @@ class SimulationRunner:
         self.crowd.draw(self.screen)
         draw_buildings(self.screen, self.fsm, self.fxs)
         draw_comm_links(self.screen, self.drones, self.lf_system)   # comm network
+        draw_paths(self.screen, self.drones)                        # planned paths
 
         for d in self.drones:
             d.draw(self.screen, self.fxs)
 
         draw_panel(self.screen, self.fh, self.fsm, self.fxs,
                    self.drones, self.crowd, self.metrics, elapsed,
-                   self.paused, self.lf_system)
+                   self.paused, self.lf_system,
+                   self.active_avoidance, self.active_planner,
+                   self.event_log)
         draw_title(self.screen, self.ft, self.fxs)
 
         fps_t = self.fxs.render(f"FPS:{int(self.clock.get_fps())}", True, (55, 70, 100))

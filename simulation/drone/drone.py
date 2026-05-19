@@ -92,6 +92,12 @@ class Drone:
         self.distance         = 0.0
         self.status           = "Tracking"
         self.collision_avoids = 0
+        
+        # Metrics & Path Caching
+        self.energy           = 0.0
+        self.ideal_dist       = 0.0
+        self.delay_caused     = 0
+        self._path            = []
 
     def reset(self, crowd) -> None:
         """Full reset to initial state (called on SPACE key)."""
@@ -112,6 +118,12 @@ class Drone:
         self.is_leader        = (self.idx == 0)
         self.comm_active      = True
         self.leader_ref       = None
+
+        # Metrics & Path Caching
+        self.energy           = 0.0
+        self.ideal_dist       = 0.0
+        self.delay_caused     = 0
+        self._path            = []
 
     # ── Sensor accessors ──────────────────────────────────────────────────────
 
@@ -181,6 +193,7 @@ class Drone:
         self.vy += dvy
         if avoiding:
             self.status = "Avoiding"
+            self.delay_caused += 1
 
         # 6. Wind disturbance
         wx, wy = self._wind.wx, self._wind.wy
@@ -202,13 +215,24 @@ class Drone:
                 self.heading + max(-MAX_TURN_RATE, min(MAX_TURN_RATE, dh))
             ) % math.tau
 
-        # 9. Integrate position
+        # 9. Integrate position & metrics
         prev_x, prev_y = self.x, self.y
         self.x += self.vx
         self.y += self.vy
         self.x = max(PAD + DRONE_R, min(PAD + SIM_W - DRONE_R, self.x))
         self.y = max(TITLE_H + PAD + DRONE_R, min(TITLE_H + PAD + SIM_H - DRONE_R, self.y))
-        self.distance += math.hypot(self.x - prev_x, self.y - prev_y)
+        
+        move_dist = math.hypot(self.x - prev_x, self.y - prev_y)
+        self.distance += move_dist
+        
+        # Energy: proportional to acceleration and speed
+        self.energy += move_dist * 0.1 + math.hypot(self.ax, self.ay) * 0.5
+        
+        # Ideal dist: progress made directly toward the target
+        if d > 0:
+            ideal_move = ((self.x - prev_x) * (self.tx - prev_x) + (self.y - prev_y) * (self.ty - prev_y)) / d
+            if ideal_move > 0:
+                self.ideal_dist += ideal_move
 
     # ── Draw ──────────────────────────────────────────────────────────────────
 

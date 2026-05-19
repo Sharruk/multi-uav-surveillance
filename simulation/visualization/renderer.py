@@ -168,3 +168,15 @@ def draw_comm_links(surf, drones: list, lf_system) -> None:
         (badge_x + 2,  badge_y + 4),
         (badge_x,      badge_y),
     ])
+
+def draw_paths(surf, drones: list) -> None:
+    """Draw the planned A* or Dijkstra paths for drones."""
+    for d in drones:
+        path = getattr(d, '_path', [])
+        if path and len(path) > 1:
+            pts = [(d.x, d.y)] + path
+            # Draw lines
+            pygame.draw.lines(surf, d.color, False, pts, 1)
+            # Draw waypoints as small dots
+            for wx, wy in path:
+                pygame.draw.circle(surf, d.color, (int(wx), int(wy)), 2)

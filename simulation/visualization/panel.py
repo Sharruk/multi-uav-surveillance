@@ -4,11 +4,13 @@ simulation/visualization/panel.py
 HUD / metrics panel rendering.
 
 draw_panel() renders the right-side panel with:
+  - Active Algorithms (collision avoidance & path planning)
   - Mission overview (time, status, crowd stats)
-  - Research metrics (coverage, accuracy, wind, comms)
+  - Research metrics (coverage, accuracy, path efficiency, etc.)
   - UAV Coordination (leader-follower status)
+  - Event Log
   - Crowd hotspot breakdown
-  - Per-UAV status cards (name, battery bar, speed, distance)
+  - Per-UAV status cards
 
 Teammate note: to add a new metric, add a call to row() inside the
 appropriate sec() block and make sure the key exists in the metrics dict.
@@ -18,10 +20,10 @@ import math
 import pygame
 
 from simulation.config import (
-    SIM_W, SIM_H, TITLE_H, PANEL_W,
+    SIM_W, SIM_H, TITLE_H, PANEL_W, WIN_H,
     GPS_NOISE, COMM_DELAY, NUM_PEOPLE, COMM_RADIUS,
     C_PANEL_BG, C_PANEL_LINE,
-    C_TEXT_PRI, C_TEXT_SEC, C_TEXT_OK, C_TEXT_WARN, C_TEXT_ACT, C_TEXT_ERR,
+    C_TEXT_PRI, C_TEXT_SEC, C_TEXT_OK, C_TEXT_WARN, C_TEXT_ACT, C_TEXT_ERR, C_TEXT_LOG
 )
 
 
@@ -37,9 +39,13 @@ def _batt_color(b: float) -> tuple:
 def draw_panel(surf, fh, fsm, fxs,
                drones: list, crowd,
                metrics: dict, elapsed: float, paused: bool,
-               lf_system=None) -> None:
+               lf_system=None, 
+               active_avoidance="Rule-based", active_planner="Coverage Offset",
+               event_log=None) -> None:
     """Render the full right-side HUD panel."""
     px = SIM_W;  py = TITLE_H
+    # Dynamic panel height support if needed, but we keep it inside SIM_H limits
+    # except that the new items might overflow SIM_H. Wait, WIN_H - TITLE_H is SIM_H.
     pygame.draw.rect(surf, C_PANEL_BG, (px, py, PANEL_W, SIM_H))
     pygame.draw.line(surf, C_PANEL_LINE, (px, py), (px, py + SIM_H), 1)
     y = py + 10;  mg = 14
@@ -50,41 +56,49 @@ def draw_panel(surf, fh, fsm, fxs,
         vs = fsm.render(str(val), True, vc)
         surf.blit(ls, (px + mg, y))
         surf.blit(vs, (px + PANEL_W - vs.get_width() - mg, y))
-        y += ls.get_height() + 4
+        y += ls.get_height() + 2  # reduced spacing to fit everything
 
     def sec(title):
         nonlocal y
-        y += 5
+        y += 4
         pygame.draw.line(surf, C_PANEL_LINE, (px + mg, y), (px + PANEL_W - mg, y), 1)
-        y += 5
+        y += 4
         h = fxs.render(title.upper(), True, C_TEXT_SEC)
-        surf.blit(h, (px + mg, y));  y += h.get_height() + 5
+        surf.blit(h, (px + mg, y));  y += h.get_height() + 3
 
     # Header
-    hdr = fh.render("Mission Statistics", True, C_TEXT_PRI)
+    hdr = fh.render("Research Dashboard", True, C_TEXT_PRI)
     surf.blit(hdr, (px + PANEL_W // 2 - hdr.get_width() // 2, y))
     y += hdr.get_height() + 3
 
+    # Active Algorithms
+    sec("Active Algorithms")
+    row("Avoidance", active_avoidance, vc=C_TEXT_ACT)
+    row("Planner", active_planner, vc=C_TEXT_ACT)
+
     # Overview
-    sec("Overview")
+    sec("Mission Overview")
     mm = int(elapsed // 60);  ss = int(elapsed % 60)
     row("Elapsed Time",  f"{mm:02d}:{ss:02d}")
     row("Status", "PAUSED" if paused else "RUNNING",
         vc=C_TEXT_WARN if paused else C_TEXT_OK)
-    row("Crowd Density", f"{crowd.density * 100:.0f}%")
-    row("Monitored",     f"{crowd.monitored:.0f}%", vc=C_TEXT_ACT)
-    ccx, ccy = crowd.center
-    row("Crowd Center",  f"({ccx:.0f}, {ccy - TITLE_H:.0f})")
+    row("Success Score", f"{metrics.get('success', 0):.1f}%", vc=C_TEXT_OK)
 
     # Research Metrics
     sec("Research Metrics")
-    row("Avoidance Events", metrics["collisions"])
-    row("Coverage Area",    f"{metrics['coverage']:.1f}%", vc=C_TEXT_ACT)
-    acc = metrics["accuracy"]
+    row("Avoidance Events", metrics.get("collisions", 0))
+    row("Coverage Area",    f"{metrics.get('coverage', 0):.1f}%", vc=C_TEXT_ACT)
+    acc = metrics.get("accuracy", 0)
     row("Tracking Accuracy", f"{acc:.1f}%",
         vc=C_TEXT_OK if acc > 70 else C_TEXT_WARN)
-    row("Total Distance",   f"{metrics['total_dist']:.0f}m")
-    row("Wind Speed",       f"{metrics['wind_spd']:.3f} m/s")
+    row("Total Distance",   f"{metrics.get('total_dist', 0):.0f}m")
+    row("Path Efficiency",  f"{metrics.get('path_eff', 100):.1f}%")
+    row("Energy Estimate",  f"{metrics.get('energy', 0):.1f} kJ")
+    row("Delay Caused",     f"{metrics.get('delay', 0)} frames")
+
+    # Environmental
+    sec("Environmental Factors")
+    row("Wind Speed",       f"{metrics.get('wind_spd', 0):.3f} m/s")
     row("GPS Noise",        f"+/-{GPS_NOISE:.1f}px")
     row("Comm Delay",       f"{COMM_DELAY} frames")
 
@@ -95,23 +109,13 @@ def draw_panel(surf, fh, fsm, fxs,
         gold = (255, 215, 0)
         row("Leader",      leader.name, vc=gold)
         row("Comm Radius", f"{COMM_RADIUS}px")
-        if lf_system.leader_switched:
-            row("! Leader Switch", lf_system.last_leader_name,
-                lc=C_TEXT_WARN, vc=C_TEXT_WARN)
-        for d in drones:
-            if d.is_leader:
-                tag, tc = "LEAD", gold
-            elif d.comm_active:
-                tag, tc = "IN RANGE", C_TEXT_OK
-            else:
-                tag, tc = "OUT RANGE", C_TEXT_ERR
-            row(f"  {d.name}", tag, vc=tc)
 
-    # Crowd Hotspots
-    sec("Crowd Hotspots")
-    for i, cnt in enumerate(crowd.hotspot_counts):
-        row(f"  Hotspot {i + 1}", f"{cnt} people",
-            vc=C_TEXT_WARN if cnt > NUM_PEOPLE // 4 else C_TEXT_PRI)
+    # Event Log
+    if event_log is not None:
+        sec("Event Log")
+        for ev in event_log[-4:]:  # last 4 events
+            t = fxs.render(f"> {ev}", True, C_TEXT_LOG)
+            surf.blit(t, (px + mg, y)); y += t.get_height() + 2
 
     # UAV Fleet Status
     sec("UAV Fleet Status")
@@ -133,16 +137,9 @@ def draw_panel(surf, fh, fsm, fxs,
         bv = fxs.render(f"{d.battery:.0f}%", True, bc2)
         surf.blit(bv, (px + mg + bar_w + 4, y - 1));  y += 11
 
-        spd_px = math.hypot(d.vx, d.vy)
-        sv = fxs.render(f"Spd:{spd_px:.2f} Dist:{d.distance * 0.1:.0f}m",
-                        True, C_TEXT_SEC)
-        surf.blit(sv, (px + mg, y));  y += sv.get_height() + 2
-        av = fxs.render(f"Avoid:{d.collision_avoids}", True, C_TEXT_SEC)
-        surf.blit(av, (px + mg, y));  y += av.get_height() + 5
-
     # Footer
     y = py + SIM_H - 28
     pygame.draw.line(surf, C_PANEL_LINE, (px + mg, y), (px + PANEL_W - mg, y), 1)
     y += 7
-    hint = fxs.render("SPACE: Reset    ESC: Quit    P: Pause", True, C_TEXT_SEC)
+    hint = fxs.render("1-4: Avoidance  5-9: Planner  SPACE: Reset  ESC: Quit", True, C_TEXT_SEC)
     surf.blit(hint, (px + PANEL_W // 2 - hint.get_width() // 2, y))

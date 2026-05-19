@@ -16,12 +16,13 @@ from simulation.config import COVERAGE_R, PAD, SIM_W, SIM_H, TITLE_H
 from simulation.environment.city_map import in_building
 
 
-def calc_metrics(drones: list, crowd) -> dict:
+def calc_metrics(drones: list, crowd, collisions: int = 0) -> dict:
     """Compute research metrics for the current simulation frame.
 
     Args:
-        drones: list of Drone instances
-        crowd:  CrowdSystem instance
+        drones:     list of Drone instances
+        crowd:      CrowdSystem instance
+        collisions: total number of collisions
 
     Returns:
         dict with keys:
@@ -29,6 +30,10 @@ def calc_metrics(drones: list, crowd) -> dict:
             accuracy     – tracking accuracy score [0, 100]
             total_dist   – total distance flown by all drones (scaled metres)
             wind_spd     – average wind speed across fleet
+            path_eff     – path efficiency % (ideal vs actual)
+            energy       – energy estimate
+            delay        – total frames spent avoiding
+            success      – mission success %
     """
     # ── Spatial coverage ─────────────────────────────────────────────────────
     step = 40
@@ -51,10 +56,26 @@ def calc_metrics(drones: list, crowd) -> dict:
     # ── Fleet aggregates ──────────────────────────────────────────────────────
     total_dist = sum(d.distance * 0.1 for d in drones)
     avg_wind   = sum(d.wind_speed for d in drones) / len(drones)
+    
+    total_raw_dist = sum(d.distance for d in drones)
+    total_ideal    = sum(d.ideal_dist for d in drones)
+    path_eff = (total_ideal / total_raw_dist * 100) if total_raw_dist > 0 else 100.0
+    path_eff = max(0.0, min(100.0, path_eff))
+
+    energy   = sum(d.energy for d in drones)
+    delay    = sum(d.delay_caused for d in drones)
+
+    # Mission success is a composite of coverage, accuracy, and collision penalties
+    success = (coverage * 0.4) + (accuracy * 0.6)
+    success = max(0.0, success - (collisions * 5.0))
 
     return {
         "coverage":   coverage,
         "accuracy":   accuracy,
         "total_dist": total_dist,
         "wind_spd":   avg_wind,
+        "path_eff":   path_eff,
+        "energy":     energy,
+        "delay":      delay,
+        "success":    success,
     }

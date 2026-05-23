@@ -1,7 +1,6 @@
 # Decentralized Multi-UAV Surveillance Swarm using POMDP Framework
 
 > [!NOTE]  
-> **Author:** Jeswin (CSE Batch 2024-29, SSN College of Engineering)  
 > **Research Context:** Aligning with Advanced Multi-Agent DRL and Graph Attention (ADGAT) research standards for the STIRS-2025 framework.
 
 ---

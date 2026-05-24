@@ -554,41 +554,45 @@ class DroneSurveillanceEnv(gym.Env):
         return obs, info
 
     def step(self, actions):
-        """Steps the simulation environment."""
+        """Steps the simulation environment with 10x sub-stepping to align control rate with physical time."""
         self.current_step += 1
         
-        # 1. Apply multi-agent controls, drain battery, apply lateral wind
-        for agent_id in self.agents:
-            drone_id = self.drone_ids[agent_id]
-            
-            if agent_id in actions:
-                action = actions[agent_id]
-                self._apply_flight_control(agent_id, action)
-                # Battery Drain
-                thrust_action = action[0]
-                drain = 0.01 + 0.03 * abs(thrust_action)
-                self.battery[agent_id] = float(np.clip(self.battery[agent_id] - drain, 0.0, 100.0))
-            else:
-                drain = 0.01
-                self.battery[agent_id] = float(np.clip(self.battery[agent_id] - drain, 0.0, 100.0))
-                
-            # Apply random lateral wind force [-0.15, 0.15] in global X/Y
-            wind_x = random.uniform(-0.15, 0.15)
-            wind_y = random.uniform(-0.15, 0.15)
-            p.applyExternalForce(
-                drone_id,
-                -1,
-                [wind_x, wind_y, 0.0],
-                [0.0, 0.0, 0.0],
-                flags=p.WORLD_FRAME,
-                physicsClientId=self.client_id
-            )
-                
-        # 2. Update boids crowd positions
+        # 1. Update boids crowd positions (once per control step)
         self.crowd.update()
         
-        # 3. Simulate step in PyBullet physics
-        p.stepSimulation(physicsClientId=self.client_id)
+        # 2. Run physical simulation sub-steps (10 sub-steps of 1/240s each, simulating ~0.042s)
+        sub_steps = 10
+        for _ in range(sub_steps):
+            for agent_id in self.agents:
+                drone_id = self.drone_ids[agent_id]
+                
+                # Apply flight control if action is provided (PyBullet clears forces after each stepSimulation)
+                if agent_id in actions:
+                    action = actions[agent_id]
+                    self._apply_flight_control(agent_id, action)
+                    
+                # Apply random lateral wind force [-0.15, 0.15] in global X/Y
+                wind_x = random.uniform(-0.15, 0.15)
+                wind_y = random.uniform(-0.15, 0.15)
+                p.applyExternalForce(
+                    drone_id,
+                    -1,
+                    [wind_x, wind_y, 0.0],
+                    [0.0, 0.0, 0.0],
+                    flags=p.WORLD_FRAME,
+                    physicsClientId=self.client_id
+                )
+                
+            p.stepSimulation(physicsClientId=self.client_id)
+            
+        # 3. Drain battery once per control step
+        for agent_id in self.agents:
+            if agent_id in actions:
+                thrust_action = actions[agent_id][0]
+                drain = 0.01 + 0.03 * abs(thrust_action)
+            else:
+                drain = 0.01
+            self.battery[agent_id] = float(np.clip(self.battery[agent_id] - drain, 0.0, 100.0))
         
         # 4. Generate outputs
         obs = {}

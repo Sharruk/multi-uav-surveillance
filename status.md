@@ -34,3 +34,22 @@
 - [x] **Camera FOV Downward Cone**: Calculate a downward 45-degree cone camera view (distance `d <= Z`) for tracking ground crowd targets, replacing the old 5m 2D tracking logic in the reward.
 - [x] **Holographic HUD Labels**: Draw a bright Cyan (`[0, 1, 1]`) floating debug label `UAV-i | Bat: {bat}% | Alt: {alt}m` hovering `0.5m` above each drone in real-time.
 - [x] **Live Swarm Terminal Dashboard**: Print live UAV swarm status dynamically in-place on a single terminal line using `\r` and `end=""` inside the interactive demo loop.
+
+## Phase 4: Testbed Integration & Swarm Control GUI Selector (Completed)
+
+- [x] **Package Structuring**:
+  - Relocate custom environment file to `envs/drone_env.py`.
+  - Add empty `__init__.py` module setups for package imports.
+  - Establish algorithms folder structures (`algorithms/obstacle_avoidance/`, `algorithms/swarm_coordination/`, `algorithms/collision_deconfliction/`, `algorithms/target_tracking/`).
+- [x] **Algorithm Scaffolding**:
+  - Implement Ray RLlib PPO Baseline config and 20-step demo simulator (`algorithms/obstacle_avoidance/ppo_baseline.py`).
+  - Implement SDDPG-NAV split-network actor design and 20-step navigation demo (`algorithms/obstacle_avoidance/state_decomp_ddpg.py`).
+  - Implement Attention-based Policy Distillation behavioral-blending controller and 20-step clearance demo (`algorithms/obstacle_avoidance/attention_distill.py`).
+- [x] **Unified Control Panel (main_selector.py)**:
+  - Create a premium dark-themed native Tkinter GUI panel centered on screen.
+  - Provide Combobox dropdown selecting from the 3 configurations.
+  - Code robust teardown sequence to prevent deadlock before executing direct PyBullet module imports.
+- [x] **Dynamic Flight & Clash Telemetry Refinements**:
+  - Implement $10\times$ physical sub-stepping inside the environment to align simulation time and crowd boids speed.
+  - Scale up control tilt commands to `0.35` (tracking) and `0.45` (avoidance) to physically tilt, bank, and steer the drones dynamically.
+  - Track cumulative clashes dynamically across all three scripts and output Unified Dashboards reporting battery, altitude, targets, and clashes for all 3 active UAVs.

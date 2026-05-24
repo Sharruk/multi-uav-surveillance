@@ -98,3 +98,28 @@ Moving ground crowd boids count: 12
 ...
 === Headless validation successful and completed! ===
 ```
+
+---
+
+## 7. Interactive Evaluation Testbed & Dynamic Swarm Refinements
+
+To demonstrate active algorithm utilization and provide visual proof of flight path optimization, a series of dynamic refinements have been integrated into the three testbed options (Multi-Agent PPO, State-Decomposition DDPG, and Attention Policy Distillation):
+
+### 7.1 Highly Visible Flight Physics
+* **High-Torque Pitch/Roll Commands**: To visually show control actions, drone attitude tilt commands are scaled up (`0.35` for target tracking, `0.45` for obstacle avoidance). This successfully overcomes the passive stabilizing restoring torque ($-2.0 \times \text{tilt}$), resulting in clearly visible flight tilts, turns, and agile translations.
+* **Horizontal Boid Tracking & Dodge Vectors**: Drones actively calculate local tracking vectors toward the nearest moving crowd boid and compute dodge vectors away from buildings based on LiDAR proximity. These are blended and fed into the physical controller.
+
+### 7.2 Altitude Sag PD & Physical Sub-Stepping
+* **10x Physical Sub-stepping**: PyBullet steps its physics engine by default at $1/240\text{s}$ per call. To align control updates and the crowd boid movement ($0.05\text{m/step}$) with physical simulation time, we implemented a $10\times$ physical sub-stepping loop inside `envs/drone_env.py`'s `step()` method. This simulates exactly $\approx 0.042\text{s}$ of physical flight per control step, mapping the crowd's progress to a realistic human walking speed ($\approx 1.2\text{m/s}$).
+* **Persistent Force/Torque Mappings**: PyBullet automatically clears external forces and torques applied using `p.applyExternalForce` or `p.applyExternalTorque` after *each* individual physical step. To guarantee continuous physical acceleration, control commands and random lateral wind gusts are re-applied inside the sub-stepping loop before *each* of the 10 physics steps.
+* **High-Gain Vertical PD Autopilot**: At full physical resolution, drones tilt and bank dynamically to translate horizontally at high speeds ($\ge 1.5\text{m/s}$), causing natural aerodynamic lift reduction. The aggressive Proportional-Derivative (PD) vertical controller ($u_{\text{thrust}} = 0.3734 + 0.45 \times e_z - 0.1 \times \dot{z}$) actively compensates for this lift sag, locking the UAVs at their target `2.0m` hover altitude during fast flight.
+
+### 7.3 Real-Time Clash Tracking Telemetry
+* **Cumulative Collision Counter**: A "Clash Counter" tracks when drones hit concrete buildings (penalty `-6.0`) or bump into other UAVs (penalty `-4.0`). It monitors environment metrics on every step:
+  ```python
+  if infos[agent_id].get("collision_penalty", 0.0) < 0.0:
+      clash_count += 1
+  ```
+* **Unified Dashboard**: Displays the battery, altitude, and tracking status of all three UAVs alongside the cumulative clash metric on the in-place dashboard:
+  `Step 0048 | Clashes: 2 | UAV-0 [Bat: 98% | Alt: 1.92m | Tracked: 1] ...`
+

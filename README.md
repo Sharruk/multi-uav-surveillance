@@ -1,15 +1,15 @@
-# Decentralized Multi-UAV Surveillance Swarm using POMDP Framework
+# Decentralized Multi-UAV Surveillance Swarm — STIRS-2025
 
-> [!NOTE]  
+> [!NOTE]
 > **Research Context:** Aligning with Advanced Multi-Agent DRL and Graph Attention (ADGAT) research standards for the STIRS-2025 framework.
 
 ---
 
 ## 🚁 Project Overview
 
-This repository hosts a high-fidelity SITL (Software-in-the-Loop) decentralized surveillance proof-of-concept. A swarm of three autonomous quadcopters navigates a procedurally generated "concrete canyon" (urban city blocks) to search for and track moving ground targets. 
+A high-fidelity SITL (Software-in-the-Loop) proof-of-concept where a swarm of **three autonomous quadcopters** navigates a procedurally generated urban concrete canyon to search for and track moving ground targets.
 
-UAV decision-making operates under a **Partially Observable Markov Decision Process (POMDP)** framework. Rather than accessing global maps or absolute positions, each drone uses local horizontal raycasting sensors to generate an imperfect **16x16 Local Occupancy Grid** subject to simulated SLAM mapping drift and sensor interference.
+UAV decision-making operates under a **Partially Observable Markov Decision Process (POMDP)** framework. Each drone uses local horizontal raycasting sensors to generate an imperfect **16×16 Local Occupancy Grid** subject to simulated SLAM mapping drift and sensor interference.
 
 ---
 
@@ -17,130 +17,266 @@ UAV decision-making operates under a **Partially Observable Markov Decision Proc
 
 | Component | Technology | Role |
 | :--- | :--- | :--- |
-| **Physics Engine** | **PyBullet** | Handles 3D rigid-body aerodynamics, link coordinates, collision constraints, and efficient batch raycasting. |
-| **Multi-Agent API** | **PettingZoo (ParallelEnv)** | Standardized ecosystem mapping multi-agent actions, step loops, observations, and information dictionaries. |
-| **Deep RL Framework** | **Ray RLlib** | Coordinates centralized training and decentralized execution using state-of-the-art DRL algorithms (MADDPG/PPO). |
-| **Deep Learning Engine** | **PyTorch** | Powers custom recurrent network definitions (ARReSVG + LSTM memory structures) with strictly enforced CPU mapping. |
-| **Core Environment** | **Gymnasium (OpenAI Gym)** | Provides base class environment structures, registration utilities, and standard observation/action `spaces`. |
-| **Vector Math & Arrays** | **NumPy** | Performs fast matrix transformations for local occupancy grids and distance math. |
-| **Visual Rendering** | **OpenGL (PyBullet GUI)** | Renders real-time lighting, shadows, and interactive holographic Cyan 3D overlay text HUDs. |
-
----
-
-## 🌟 Key Features
-
-### 🏢 1. Procedural Concrete Canyon Generation
-- **Dynamic Obstacles**: Spawns `8-15` buildings with randomized coordinates, widths (1m to 3m), and heights (2m to 8m).
-- **Collision Checking**: Employs an active footprint collision-checking loop to guarantee obstacles never spawn directly on top of the drones' initial starting positions.
-- **Visual Depth**: Assigns each building block a concrete texture with randomized grey shades (RGB `[0.55, 0.65]`) to create depth and visual realism.
-
-### 🚁 2. High-Fidelity Multi-Body UAV Spawning
-- **Rigid Physical Assembly**: Constructed dynamically in PyBullet using `p.createMultiBody`.
-- **5-Link Rigid Topology**:
-  - **Chassis Base**: A dark-grey box base of `[0.15, 0.15, 0.05]` m (Mass: `1.0 kg`).
-  - **Rotors**: 4 bright-blue cylindrical rotors of radius `0.08` m and thickness `0.02` m (Mass: `0.1 kg` each) rigidly attached via fixed joints (`p.JOINT_FIXED`).
-- **Total Physical Mass**: `1.4 kg` per UAV.
-
-### ⚙️ 3. Direct Torque Kinematics Control
-- **Thrust Force**: Applied vertical thrust force in local `LINK_FRAME`:
-  $$\text{thrust\_force} = (u_{\text{thrust}} + 1.0) \times 10.0 \text{ N}$$
-  *(Balances the gravitational force of $1.4\text{ kg} \times 9.81\text{ m/s}^2 = 13.734\text{ N}$ at $u_{\text{thrust}} \approx 0.3734$)*.
-- **Directional Torques**: Physical local torque vector `[roll_torque, pitch_torque, yaw_torque]` mapped directly from continuous action inputs `[-1.0, 1.0]`:
-  $$\tau_{\text{roll}} = u_{\text{roll}} \times 0.5 \quad | \quad \tau_{\text{pitch}} = u_{\text{pitch}} \times 0.5 \quad | \quad \tau_{\text{yaw}} = u_{\text{yaw}} \times 0.5$$
-- **Proportional Attitude Stabilization**: Integrates custom stabilization torques ($\tau_{\text{stabilize}} = -2.0 \cdot \theta_{\text{current}}$) to maintain upright stability. This prevents instant flips during training while preserving realistic physical tilting and drift.
-
-### 🔋 4. Physical Constraints: Wind & Battery
-- **Wind Gusts**: Random lateral forces in the range `[-0.15, 0.15]` N are applied along the global X and Y axes (`p.WORLD_FRAME`) on every step.
-- **Active Battery Drain**: Power drains dynamically based on the vertical thrust effort:
-  $$\Delta_{\text{battery}} = 0.01 + 0.03 \times |u_{\text{thrust}}| \text{ % per step}$$
-- **Battery Safety Cutoff**: Drones undergo a complete low-power shutdown (thrust and torques drop to `0.0`) when battery hits `0.0%`, leading to gravitational crashes.
-
-### 👁️ 5. Downward Camera FOV & Simulated SLAM
-- **45° Cone Frustum**: Computes surveillance coverage using a downward-facing camera cone where the radius of detection is equal to the UAV's altitude ($Z$):
-  $$d_{\text{horizontal}} = \sqrt{(x_{\text{uav}} - x_{\text{target}})^2 + (y_{\text{uav}} - y_{\text{target}})^2} \le Z_{\text{uav}}$$
-- **SLAM Noisy Occupancy Grid**: Adds configurable spatial coordinate drift, cell flips, and Gaussian noise into the 16x16 grid to simulate real-world SLAM mapping anomalies.
-
-### 📊 6. Swarm Dashboard & Orbital Cinematic UI
-- **Cinematic Orbital Tracking**: Beautiful orbital camera rotations and clean viewing styles (no visual debug lines or PyBullet side panels).
-- **Holographic 3D Text overlays**: Floating bright Cyan labels (`UAV-i | Bat: {bat}% | Alt: {alt}m`) hover `0.5m` above each UAV. Updates cleanly in-place using PyBullet's `replaceItemUniqueId` to prevent memory leaks.
-- **In-Place Terminal Dashboard**: Aggregates real-time battery, altitude, and tracking telemetry into a single Console Status Bar using `\r` carriage returns.
+| **Physics Engine** | **PyBullet** | 3D rigid-body aerodynamics, collision, batch raycasting |
+| **Multi-Agent API** | **PettingZoo (ParallelEnv)** | Multi-agent action/step/observation mapping |
+| **Deep RL Framework** | **Ray RLlib** | MADDPG/PPO distributed training *(Python ≤ 3.12 only)* |
+| **Deep Learning** | **PyTorch** | ARReSVG + LSTM policy network (CPU-only enforced) |
+| **Core Environment** | **Gymnasium** | Base class, spaces, registration utilities |
+| **Vector Math** | **NumPy** | Grid transforms, occupancy grid math |
+| **Visual Rendering** | **OpenGL (PyBullet GUI)** | Real-time 3D lighting, shadows, holographic HUD text |
 
 ---
 
 ## 📂 Repository Structure
 
 ```
-drone_test/
-├── .venv/                  # Local virtual Python environment
-├── drone_env.py            # Primary Gym/PettingZoo UAV environment
-├── train.py                # Ray RLlib baseline training and memory wrapper
-├── status.md               # Phase-by-phase project status log
-├── task.md                 # Completion checklist
-├── walkthrough.md          # Technical walkthrough & PyBullet API details
-├── project.md              # Project outline and requirements
-├── metrics.md              # Target evaluation metrics
-└── README.md               # Project documentation (this file)
+multi-uav-surveillance/
+├── venv/                   # Virtual Python environment (Python 3.13, not committed)
+├── drone_env.py            # ✅ PRIMARY: PyBullet 3D simulation environment
+├── train.py                # Ray RLlib training scaffold + ARReSVG policy
+├── requirements.txt        # Accurate dependency list (auto-generated from imports)
+├── README.md               # Setup & usage guide (this file)
+├── CURRENT_STATUS.md       # Team-readable project state tracker
+├── CHANGELOG.md            # Update history (what changed, why, next steps)
+├── TASKS.md                # Task tracker (completed / pending / research ideas)
+├── project.md              # Project outline & research requirements
+├── status.md               # Phase-by-phase completion log (legacy)
+├── task.md                 # Phase 3 task checklist (legacy)
+├── walkthrough.md          # Technical implementation details
+└── metrics.md              # STIRS-2025 target benchmarks
 ```
 
 ---
 
-## 🛠️ Installation & Setup
+## ⚙️ Setup Instructions
 
-1. **Prerequisites**: Ensure you have Python 3.10+ installed on your Windows system.
-2. **Setup Virtual Environment**:
-   ```powershell
-   # Activate local environment
-   .\.venv\Scripts\Activate.ps1
+### Prerequisites
+- **Python 3.13** (for simulation only)
+- **Python 3.11 or 3.12** (required for Ray RLlib training — see Known Issues)
+- Git, Windows PowerShell
+
+### Step 1 — Clone & Navigate
+
+```powershell
+git clone <repo-url>
+cd multi-uav-surveillance
+```
+
+### Step 2 — Activate the Virtual Environment
+
+```powershell
+# Activate (Windows PowerShell)
+.\venv\Scripts\Activate.ps1
+
+# Verify you're in the venv
+python --version    # Should show Python 3.13.x
+```
+
+> [!TIP]
+> If you see a script execution policy error, run:
+> `Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser`
+
+### Step 3 — Install Dependencies
+
+```powershell
+# With venv activated:
+pip install numpy pybullet gymnasium torch pettingzoo
+```
+
+Or use the requirements file (simulation-only packages, no Ray):
+
+```powershell
+pip install -r requirements.txt
+```
+
+> [!WARNING]
+> **Ray RLlib requires Python ≤ 3.12.** It does NOT install on Python 3.13.
+> See the [Training Setup](#training-setup-ray-rllib) section below.
+
+---
+
+## 🚀 Getting Started
+
+We recommend using **Docker** to run this project seamlessly, avoiding Python 3.13 dependency issues with PyBullet and Ray.
+
+### Method 1: Using Docker (Recommended)
+
+1. Ensure [Docker Desktop](https://www.docker.com/products/docker-desktop) is installed and running.
+2. Open your terminal in the project directory.
+3. Build and start the training process:
+   ```bash
+   docker-compose up --build training
    ```
-3. **Core Dependencies**:
-   * PyBullet (physics engine)
-   * Gymnasium / PettingZoo (multi-agent RL environments)
-   * Ray RLlib (distributed training)
-   * PyTorch (tensor computation, CPU-only mapping enforced)
-   * NumPy
+4. To run the simulation (headless validation):
+   ```bash
+   docker-compose up --build simulation
+   ```
+
+### Method 2: Local Setup (Python 3.10)
+
+If you prefer to run it locally, follow the instructions in the Troubleshooting section below ("Fix B") to use a Python 3.10 virtual environment.
 
 ---
 
-## 🚀 Running the Code
+## 🚀 Running the Simulation
 
-### 🖥️ 1. Interactive Live Swarm Demo (GUI)
-Run the script directly with default parameters to visualize the physical multi-body drones, concrete canyons, wind drifts, and the holographic HUD:
+### Option A — Interactive GUI Demo (Recommended)
+
+Launches the PyBullet 3D GUI with the cinematic orbital camera, holographic HUD labels, and live terminal dashboard:
+
 ```powershell
-.\.venv\Scripts\python.exe drone_env.py
+.\venv\Scripts\python.exe drone_env.py
 ```
-*Press `Ctrl+C` in your terminal to safely terminate the demo loop.*
 
-### 🧪 2. Quick Headless Validation (Direct Physics)
-To test the raw mathematical execution, local SLAM grid processing, and observations without PyBullet's graphical GUI, toggle `DEMO_MODE = False` at the top of `drone_env.py` and run:
+*Press `Ctrl+C` in your terminal to safely stop the demo loop.*
+
+> `DEMO_MODE = True` is set at the top of `drone_env.py` by default — this enables GUI mode.
+
+### Option B — Headless Validation (No Window)
+
+Test the raw physics, occupancy grids, and observations without a GUI window:
+
+1. Open `drone_env.py` and change line 11:
+   ```python
+   DEMO_MODE = False   # was True
+   ```
+2. Run:
+   ```powershell
+   .\venv\Scripts\python.exe drone_env.py
+   ```
+
+This runs a **10-step trial** and prints the SLAM occupancy grid as ASCII art in the console.
+
+---
+
+## 🚂 Training Setup (Ray RLlib)
+
+> [!IMPORTANT]
+> Ray RLlib **does not support Python 3.13** as of May 2026.
+> You must use Python 3.11 or 3.12 for training.
+
+### Step 1 — Install Python 3.12
+
+Download from: https://www.python.org/downloads/release/python-3120/
+
+### Step 2 — Create a second venv for training
+
 ```powershell
-.\.venv\Scripts\python.exe drone_env.py
+# Create a Python 3.12 venv for training (keep venv/ for simulation)
+py -3.12 -m venv venv312
+.\venv312\Scripts\Activate.ps1
+pip install numpy pybullet gymnasium torch pettingzoo ray[rllib]
 ```
-*This will run a 10-step trial and print a simulated SLAM occupancy grid in ASCII inside your console.*
 
-### 🚂 3. Multi-Agent Training (Ray RLlib)
-To start multi-agent training using Ray RLlib (mapping our custom PettingZoo environment wrappers into MADDPG or PPO recurrent baselines with LSTM memory models):
+### Step 3 — Run training validation
+
 ```powershell
-.\.venv\Scripts\python.exe train.py
+.\venv312\Scripts\python.exe train.py
+```
+
+This validates the ARReSVG policy architecture and ADGAT attention routing — no actual training loop yet.
+
+---
+
+## 🔑 Key Environment Parameters
+
+| Parameter | Default | Description |
+|:----------|:--------|:------------|
+| `DEMO_MODE` | `True` | `True` = GUI with orbital camera; `False` = headless DIRECT |
+| `render_mode` | `"human"` | Passed to `DroneSurveillanceEnv()` |
+| `fixed_layout` | `False` | `True` = seed 42 for reproducible building/crowd layout |
+| `noise_params` | See below | SLAM noise configuration |
+
+**Default noise params:**
+```python
+noise = {
+    "flip_prob": 0.04,       # Probability of cell flip per step
+    "gaussian_std": 0.05,    # Std dev of Gaussian sensor noise
+    "drift_offset": (0, 0)   # (x_shift, y_shift) SLAM drift
+}
 ```
 
 ---
 
-## 📈 Evaluation & STIRS-2025 Target Benchmarks
+## 📈 STIRS-2025 Target Benchmarks
 
-The system is designed to evaluate decentralized swarm performance against MADDPG baselines under the following rigorous metrics:
-
-| Metric | Definition | Target Goal |
+| Metric | Definition | Target |
 | :--- | :--- | :--- |
-| **Swarm Success Rate (SSR)** | Ratio of collision-free surveillance missions completed | $\ge 85\%$ |
-| **Dynamic Adaptability (DA)** | Recalculation time of POMDP belief state during local grid updates | $\le 0.12\text{ s}$ |
-| **Path Optimality (PO)** | Ratio of actual flight path length to the absolute shortest path | $\le 1.1$ |
-| **Min Distance Margin (MDM)** | Separation distance maintained between UAVs and buildings | $1.0\text{ to }5.0\text{ m}$ |
-| **Scalability Limit** | Execution computation time (CT) as swarm scales to 5 drones | $\text{CT} \le 0.5\text{ s}$ |
-| **Resilience Log** | Target Recognition Rate (TRR) drop-off curve under injected SLAM noise | High robustness (minimal TRR decay) |
+| **SSR** — Swarm Success Rate | Collision-free mission ratio | ≥ 85% |
+| **DA** — Dynamic Adaptability | POMDP belief state recalculation time | ≤ 0.12 s |
+| **PO** — Path Optimality | Actual / shortest path ratio | ≤ 1.1 |
+| **MDM** — Min Distance Margin | UAV–building separation maintained | 1.0–5.0 m |
+| **Scalability Limit** | Computation time at 5 drones | CT ≤ 0.5 s |
+| **TRR Resilience** | Target Recognition Rate under SLAM noise | Minimal decay |
 
 ---
 
-## 💡 Technical Reference Notes
+## 🐞 Troubleshooting
 
-* **GPU Offloading**: Headless direct pipelines are fully decoupled from GPU dependencies, ensuring training scaling remains 100% stable on CPU tensors for hardware compatibility (e.g. 16GB RAM laptops).
-* **Observation Space Keys**: Keeps observations to standard keys (`position`, `velocity`, `lidar`, `occupancy_grid`) to guarantee compatibility with all standard RL libraries (Ray, StableBaselines3).
+### "ERROR: Failed building wheel for pybullet" (MOST COMMON)
+**Root cause:** pybullet has no pre-built wheel for Python 3.13. It must compile from C++ source.
+
+**Fix A — Install VS C++ Build Tools (stay on Python 3.13):**
+```powershell
+# 1. Download and install VS Build Tools with "Desktop development with C++"
+#    https://visualstudio.microsoft.com/visual-cpp-build-tools/
+# 2. After install, restart PowerShell and re-run:
+.\venv\Scripts\python.exe -m pip install pybullet
+```
+
+**Fix B — Install Python 3.10 (RECOMMENDED — also fixes Ray/rllib):**
+```powershell
+# Python 3.10 has pre-built wheels for pybullet AND supports ray[rllib]
+# Download Python 3.10: https://www.python.org/downloads/release/python-31011/
+py -3.10 -m venv venv310
+.\venv310\Scripts\Activate.ps1
+pip install numpy pybullet gymnasium torch pettingzoo ray[rllib]
+python drone_env.py    # simulation
+python train.py        # full training
+```
+
+### "No matching distribution found for ray"
+Ray does not support Python 3.13. Use Python 3.10/3.11 venv (see Fix B above).
+
+### "pybullet_data: No matching distribution found"
+`pybullet_data` is **not** a separate PyPI package — it ships inside `pybullet`. Just `pip install pybullet`.
+
+### PyBullet GUI window doesn't open
+Make sure `DEMO_MODE = True` at line 11 of `drone_env.py`. Also verify your display drivers support OpenGL.
+
+### Script execution policy error (PowerShell)
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+### "ImportError: cannot import name 'DroneEnv' from drone_env"
+`train.py` tries to import `DroneEnv` but `drone_env.py` exports `DroneSurveillanceEnv`. This is expected — `train.py` uses its built-in mock `DroneEnv` fallback. The simulation runs correctly via `drone_env.py` directly.
+
+### Drones crash immediately / fall to the floor
+Hover thrust is calibrated at `u_thrust ≈ 0.3734`. The demo loop uses thrust ≈ `0.38` with a small random walk. This is intentional — drones hover stably with slight drift.
+
+### Run the diagnostics script first
+```powershell
+.\venv\Scripts\python.exe setup_env.py
+```
+This tells you exactly what's installed, what's missing, and how to fix it.
+
+---
+
+## 💡 Technical Notes
+
+- **GPU Offloading**: All PyTorch tensors are pinned to CPU. No CUDA required — safe for 16GB RAM laptops.
+- **Observation Space Keys**: `position`, `velocity`, `lidar`, `occupancy_grid` — compatible with Ray and SB3.
+- **Physics Timestep**: PyBullet default (`1/240 s`). Demo loop adds `time.sleep(0.02)` for ~50 Hz visual playback.
+- **Battery hover life**: At `u_thrust = 0.3734`, drain ≈ `0.01 + 0.03 × 0.3734 ≈ 0.021%/step` → ~500 steps at full thrust.
+
+---
+
+## 📚 See Also
+
+- [`CURRENT_STATUS.md`](CURRENT_STATUS.md) — What's working, what's blocked, known issues
+- [`CHANGELOG.md`](CHANGELOG.md) — What changed, when, and why
+- [`TASKS.md`](TASKS.md) — Completed, pending, and research ideas
+- [`walkthrough.md`](walkthrough.md) — Deep-dive technical implementation details
+- [`project.md`](project.md) — Project outline and research requirements
+- [`metrics.md`](metrics.md) — STIRS-2025 evaluation benchmarks

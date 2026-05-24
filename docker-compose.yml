@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  training:
+    build: .
+    container_name: multi_uav_training
+    command: python train.py
+    volumes:
+      - .:/app
+      - /app/venv
+      - /app/venv310
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+              # Note: If you don't have an NVIDIA GPU, Docker will gracefully ignore this section 
+              # or you can remove the `deploy` block.
+
+  simulation:
+    build: .
+    container_name: multi_uav_simulation
+    # Force headless mode by setting an environment variable if your code supports it
+    # OR run standard train.py / headless simulation
+    command: python drone_env.py
+    volumes:
+      - .:/app
+      - /app/venv
+      - /app/venv310

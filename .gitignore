@@ -1,2 +1,16 @@
-﻿.venv/
+.venv/
+venv/
+venv312/
 __pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+*.log
+ray_results/
+venv/
+venv310/
+venv_wsl/

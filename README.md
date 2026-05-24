@@ -42,8 +42,15 @@ UAV decision-making operates under a **Partially Observable Markov Decision Proc
 
 ```
 multi-uav-surveillance/
-├── venv/                   # Virtual Python environment (Python 3.13, not committed)
-├── drone_env.py            # ✅ PRIMARY: PyBullet 3D simulation environment
+├── .venv/                  # Virtual Python environment
+├── main_selector.py        # ✅ PRIMARY: Interactive GUI algorithm selector panel
+├── envs/
+│   └── drone_env.py        # Gymnasium Multi-Agent Environment with 10x physical sub-stepping
+├── algorithms/
+│   ├── obstacle_avoidance/ # Active milestone algorithms: PPO, SDDPG, and Distillation
+│   ├── swarm_coordination/ # Future milestone scope
+│   ├── collision_deconfliction/ # Future milestone scope
+│   └── target_tracking/    # Future milestone scope
 ├── train.py                # Ray RLlib training scaffold + ARReSVG policy
 ├── requirements.txt        # Accurate dependency list (auto-generated from imports)
 ├── README.md               # Setup & usage guide (this file)
@@ -51,8 +58,8 @@ multi-uav-surveillance/
 ├── CHANGELOG.md            # Update history (what changed, why, next steps)
 ├── TASKS.md                # Task tracker (completed / pending / research ideas)
 ├── project.md              # Project outline & research requirements
-├── status.md               # Phase-by-phase completion log (legacy)
-├── task.md                 # Phase 3 task checklist (legacy)
+├── status.md               # Phase-by-phase completion log
+├── task.md                 # Phase checklist log
 ├── walkthrough.md          # Technical implementation details
 └── metrics.md              # STIRS-2025 target benchmarks
 ```
@@ -77,9 +84,9 @@ cd multi-uav-surveillance
 
 ```powershell
 # Activate (Windows PowerShell)
-.\venv\Scripts\Activate.ps1
+.\.venv\Scripts\Activate.ps1
 
-# Verify you're in the venv
+# Verify you're in the .venv
 python --version    # Should show Python 3.13.x
 ```
 
@@ -90,7 +97,7 @@ python --version    # Should show Python 3.13.x
 ### Step 3 — Install Dependencies
 
 ```powershell
-# With venv activated:
+# With .venv activated:
 pip install numpy pybullet gymnasium torch pettingzoo
 ```
 
@@ -131,32 +138,25 @@ If you prefer to run it locally, follow the instructions in the Troubleshooting 
 
 ## 🚀 Running the Simulation
 
-### Option A — Interactive GUI Demo (Recommended)
+### Option A — Interactive GUI Selection Testbed (Recommended)
 
-Launches the PyBullet 3D GUI with the cinematic orbital camera, holographic HUD labels, and live terminal dashboard:
+Launches the native dark-themed Tkinter control panel to let you choose and deploy any of the three core drone obstacle avoidance algorithms (Multi-Agent PPO, State-Decomposition DDPG, or Attention Policy Distillation) in 3D GUI mode:
 
 ```powershell
-.\venv\Scripts\python.exe drone_env.py
+.\.venv\Scripts\python.exe main_selector.py
 ```
 
-*Press `Ctrl+C` in your terminal to safely stop the demo loop.*
+*Select your configuration in the dropdown, click **Launch Simulation**, and watch the drones bank, tilt, steer, and track ground crowd targets in real-time.*
 
-> `DEMO_MODE = True` is set at the top of `drone_env.py` by default — this enables GUI mode.
+### Option B — Headless Environment Validation (No Window)
 
-### Option B — Headless Validation (No Window)
+Test the raw environment physics, sub-stepping, occupancy grids, and observations without a GUI window:
 
-Test the raw physics, occupancy grids, and observations without a GUI window:
+```powershell
+.\.venv\Scripts\python.exe envs/drone_env.py
+```
 
-1. Open `drone_env.py` and change line 11:
-   ```python
-   DEMO_MODE = False   # was True
-   ```
-2. Run:
-   ```powershell
-   .\venv\Scripts\python.exe drone_env.py
-   ```
-
-This runs a **10-step trial** and prints the SLAM occupancy grid as ASCII art in the console.
+This runs a quick **10-step trial** in PyBullet's headless DIRECT mode and prints the local occupancy grid as ASCII art in the console.
 
 ---
 
@@ -232,7 +232,7 @@ noise = {
 # 1. Download and install VS Build Tools with "Desktop development with C++"
 #    https://visualstudio.microsoft.com/visual-cpp-build-tools/
 # 2. After install, restart PowerShell and re-run:
-.\venv\Scripts\python.exe -m pip install pybullet
+.\.venv\Scripts\python.exe -m pip install pybullet
 ```
 
 **Fix B — Install Python 3.10 (RECOMMENDED — also fixes Ray/rllib):**
@@ -242,8 +242,8 @@ noise = {
 py -3.10 -m venv venv310
 .\venv310\Scripts\Activate.ps1
 pip install numpy pybullet gymnasium torch pettingzoo ray[rllib]
-python drone_env.py    # simulation
-python train.py        # full training
+python main_selector.py    # launcher GUI
+python train.py            # full training
 ```
 
 ### "No matching distribution found for ray"
@@ -253,7 +253,7 @@ Ray does not support Python 3.13. Use Python 3.10/3.11 venv (see Fix B above).
 `pybullet_data` is **not** a separate PyPI package — it ships inside `pybullet`. Just `pip install pybullet`.
 
 ### PyBullet GUI window doesn't open
-Make sure `DEMO_MODE = True` at line 11 of `drone_env.py`. Also verify your display drivers support OpenGL.
+Make sure `DEMO_MODE = os.environ.get("HEADLESS", "0") != "1"` and `HEADLESS` environment variable is not set to `1` in `envs/drone_env.py`. Also verify your display drivers support OpenGL.
 
 ### Script execution policy error (PowerShell)
 ```powershell
@@ -261,14 +261,14 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
 ### "ImportError: cannot import name 'DroneEnv' from drone_env"
-`train.py` tries to import `DroneEnv` but `drone_env.py` exports `DroneSurveillanceEnv`. This is expected — `train.py` uses its built-in mock `DroneEnv` fallback. The simulation runs correctly via `drone_env.py` directly.
+`train.py` tries to import `DroneEnv` but `envs/drone_env.py` exports `DroneSurveillanceEnv`. This is expected — `train.py` uses its built-in mock `DroneEnv` fallback. The simulation runs correctly via `envs/drone_env.py` or `main_selector.py` directly.
 
 ### Drones crash immediately / fall to the floor
 Hover thrust is calibrated at `u_thrust ≈ 0.3734`. The demo loop uses thrust ≈ `0.38` with a small random walk. This is intentional — drones hover stably with slight drift.
 
 ### Run the diagnostics script first
 ```powershell
-.\venv\Scripts\python.exe setup_env.py
+.\.venv\Scripts\python.exe setup_env.py
 ```
 This tells you exactly what's installed, what's missing, and how to fix it.
 

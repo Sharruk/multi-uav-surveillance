@@ -5,6 +5,17 @@
 
 ---
 
+## 🧭 Quick Start for Team Members
+
+New to the team? Follow these quick reference guides to get started in under 10 minutes:
+
+*   📖 **[TEAM_ROADMAP.md](file:///d:/IFSP/multi-uav-surveillance/TEAM_ROADMAP.md)**: Project vision, migration history, and the 6 research phases.
+*   🤝 **[TEAM_WORKFLOW.md](file:///d:/IFSP/multi-uav-surveillance/TEAM_WORKFLOW.md)**: Git branching policy, 5-step commit workflow, and merge process.
+*   🚀 **[RUN_GUIDE.md](file:///d:/IFSP/multi-uav-surveillance/RUN_GUIDE.md)**: Running simulation locally (GUI), in Docker (headless), or starting training.
+*   📝 **[UPDATE_RULES.md](file:///d:/IFSP/multi-uav-surveillance/UPDATE_RULES.md)**: Mandatory files to update (`CURRENT_STATUS.md`, `CHANGELOG.md`, `TASKS.md`) when pushing changes.
+
+---
+
 ## 🚁 Project Overview
 
 A high-fidelity SITL (Software-in-the-Loop) proof-of-concept where a swarm of **three autonomous quadcopters** navigates a procedurally generated urban concrete canyon to search for and track moving ground targets.

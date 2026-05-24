@@ -52,6 +52,7 @@
 - [x] Create `CHANGELOG.md`
 - [x] Create `TASKS.md`
 - [x] Update `README.md`
+- [x] Fix Docker setup for CPU-only training and Headless simulation (`HEADLESS=1`)
 
 ---
 

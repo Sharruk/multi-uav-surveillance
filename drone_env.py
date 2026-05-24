@@ -8,7 +8,8 @@ import pybullet as p
 import pybullet_data
 
 # Global Demo Mode Toggle: Set to True to enable premium GUI mode, camera tracking, and 3D LiDAR rendering.
-DEMO_MODE = True
+# In Docker, we set HEADLESS=1 to force headless mode and avoid X server errors.
+DEMO_MODE = os.environ.get("HEADLESS", "0") != "1"
 
 try:
     import gymnasium as gym

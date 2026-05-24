@@ -1,7 +1,7 @@
 # CURRENT_STATUS.md
 # Decentralized Multi-UAV Surveillance — Project Status
 
-> **Last Updated:** 2026-05-23  
+> **Last Updated:** 2026-05-24  
 > **Branch:** Drone3D  
 > **Author:** Jeswin (SSN College of Engineering, CSE 2024–29)  
 > **Research Framework:** STIRS-2025
@@ -49,16 +49,11 @@ The environment runs correctly on **Python 3.13** with `drone_env.py`.
 - Cinematic orbital camera (smooth 360° rotation, no side panels)
 - Live in-place terminal swarm dashboard using `\r` carriage returns
 
-### Environment Setup (2026-05-23) ✅
-- `venv/` virtual environment created (Python 3.13.1)
-- `requirements.txt` created with accurate imports
-- `numpy 2.4.6` installed ✅
-- `gymnasium 1.3.0` installed ✅
-- `torch 2.12.0+cpu` installed ✅
-- `pettingzoo 1.26.1` installed ✅
-- `pybullet` — NOT installed (requires VS Build Tools or Python 3.10) ⚠️
-- `.gitignore` updated: `venv/`, `venv312/`, `*.log`, `ray_results/` added
-- `setup_env.py` diagnostic script created
+### Environment Setup & Onboarding (2026-05-24) ✅
+- Created virtual environment and dependency files (`requirements.txt`)
+- Created diagnostic scripts (`setup_env.py`)
+- Created team onboarding suite: `TEAM_ROADMAP.md`, `TEAM_WORKFLOW.md`, `RUN_GUIDE.md`, `UPDATE_RULES.md`
+- Linked all files dynamically under a "Quick Start" section in `README.md`
 - Neural architecture validation (CNN + LSTM + ADGAT): PASSED ✅
 
 ---
@@ -93,6 +88,10 @@ The environment runs correctly on **Python 3.13** with `drone_env.py`.
 2. **Environment Setup Blockers:** PyBullet and Ray RLlib lack Python 3.13 support. 
    - Fix: Transitioned to a Docker-based architecture (`python:3.10-slim` base image) to ensure cross-platform compatibility without complex manual compiler setup.
 
+3. **Docker CPU-Only & Headless Execution Fixed:**
+   - Symptoms: Simulation failed with `cannot connect to X server` and training failed requesting `nvidia` GPU.
+   - Fix: Removed NVIDIA GPU deployment requirements from `docker-compose.yml`. Configured `drone_env.py` to conditionally use `DEMO_MODE=False` via the `HEADLESS=1` environment variable when running inside Docker. Training is confirmed to execute strictly on CPU.
+
 ---
 
 ## ⚠️ Known Issues
@@ -109,10 +108,6 @@ The environment runs correctly on **Python 3.13** with `drone_env.py`.
   .\venv310\Scripts\Activate.ps1
   pip install numpy pybullet gymnasium torch pettingzoo ray[rllib]
   ```
-
-### 3. PyBullet GUI in Docker
-- **Issue**: Docker containers running headless do not have a graphical display. If `DEMO_MODE=True` in `drone_env.py`, it may crash trying to open an OpenGL window.
-- **Workaround**: Either use `DEMO_MODE=False` for headless testing or configure an X11 server (like VcXsrv) and forward the `DISPLAY` environment variable to the container.
 
 ### 2. Ray / Python 3.13 Incompatibility (BLOCKER for training)
 - **Issue**: `ray[rllib]` (the distributed training framework) does not have wheels for Python 3.13.

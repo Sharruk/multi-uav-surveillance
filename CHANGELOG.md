@@ -3,6 +3,48 @@
 
 > Format: Date | Branch/Person | What Changed | Why | Issues Fixed | Next Step
 
+## [2026-05-24] — Docker CPU-Only & Headless Execution Fixes
+**Branch:** Drone3D | **By:** Antigravity (AI assistant)
+
+**What changed:**
+- Removed NVIDIA GPU deployment configurations from `docker-compose.yml`.
+- Updated `drone_env.py` to toggle `DEMO_MODE=False` via the `HEADLESS=1` environment variable.
+- Added `HEADLESS=1` to the `simulation` service in `docker-compose.yml`.
+- Created `RUN_COMMANDS.md` with explicit commands for Local GUI, Docker Headless, and Docker CPU Training.
+
+**Why:**
+- To ensure compatibility across all team members' machines without requiring dedicated NVIDIA GPUs or WSL X11 server forwarding.
+- Docker simulation previously crashed with `cannot connect to X server`.
+- Docker training previously failed requesting an unavailable `nvidia` driver.
+
+**Issues fixed:**
+- Blocked Docker simulation and training execution on CPU-only machines.
+
+**Next step:**
+- Proceed with Phase 2 (Environment Improvements) and Phase 3 (Benchmarking preparation).
+
+---
+
+## [2026-05-24] — Team Roadmap & Onboarding Docs
+**Branch:** Drone3D | **By:** Antigravity (AI assistant)
+
+**What changed:**
+- Created `TEAM_ROADMAP.md` outlining project scope, Pygame-to-Drone3D transition rationale, and project phases 1-6.
+- Created `TEAM_WORKFLOW.md` highlighting the `Drone3D` branch focus, 5-step git workflow, and simple merge process.
+- Created `RUN_GUIDE.md` detailing options to run the simulation locally (GUI), in Docker (headless), and the training configurations.
+- Created `UPDATE_RULES.md` documenting mandatory status updates for `CURRENT_STATUS.md`, `CHANGELOG.md`, and `TASKS.md`.
+- Updated `README.md` to add a "Quick Start for Team Members" section linking to the new onboarding documents.
+
+**Why:**
+- To provide a clear, beginner-friendly entry point for new team members.
+- To formalize repository update rules, run guides, and git branching policies.
+
+**Issues fixed:**
+- Documentation gaps for team setup and onboarding.
+
+**Next step:**
+- Proceed with Phase 2 (Environment Improvements) and Phase 3 (Benchmarking preparation).
+
 ---
 
 ## [2026-05-23] — Setup & Documentation Pass

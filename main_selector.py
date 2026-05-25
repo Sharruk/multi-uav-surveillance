@@ -1,7 +1,29 @@
 import os
 import sys
+import argparse
 import tkinter as tk
 from tkinter import ttk
+
+# ── CLI flags ─────────────────────────────────────────────────────────────────
+_parser = argparse.ArgumentParser(add_help=False)
+_parser.add_argument('--scenario', default=None,
+                     choices=['downtown', 'residential', 'event', 'mixed', 'industrial'],
+                     help='Directly launch a specific urban scenario (skips GUI)')
+_parser.add_argument('--algorithm', default=None,
+                     choices=['ppo', 'ddpg', 'distill'],
+                     help='Algorithm shorthand when used with --scenario')
+_CLI, _ = _parser.parse_known_args()
+
+
+SCENARIO_LABELS = {
+    'downtown':    'Downtown Surveillance  (high-rise, dense crowd)',
+    'residential': 'Residential Monitoring  (parks, low-rise, parking)',
+    'event':       'Event Crowd Control  (plaza, very dense gathering)',
+    'mixed':       'Mixed Urban Area  (varied heights, general testing)',
+    'industrial':  'Industrial / Port Zone  (warehouses, sparse crowd)',
+}
+SCENARIO_KEYS = list(SCENARIO_LABELS.keys())
+
 
 def center_window(window, width=500, height=320):
     """Centers the Tkinter window on the screen."""
@@ -15,7 +37,7 @@ def run_selector():
     # Setup Tkinter root window
     root = tk.Tk()
     root.title("STIRS-2025: Swarm Policy Selector")
-    center_window(root, 520, 320)
+    center_window(root, 560, 420)
     
     # Premium Dark Palette Colors
     BG_DARK = "#1E1E24"
@@ -61,49 +83,55 @@ def run_selector():
     card_frame = tk.Frame(root, bg=CARD_BG, bd=1, relief=tk.FLAT, padx=25, pady=20)
     card_frame.pack(padx=20, pady=10, fill=tk.BOTH, expand=True)
     
-    prompt_label = tk.Label(
-        card_frame, 
-        text="Select Swarm Control Architecture:", 
-        font=("Helvetica", 11, "bold"), 
-        bg=CARD_BG, 
-        fg=TEXT_LIGHT
-    )
-    prompt_label.pack(anchor=tk.W, pady=(0, 5))
-    
-    # Dropdown combobox choices
-    options = [
+    # ── ttk style ──────────────────────────────────────────────────────────
+    style = ttk.Style()
+    style.theme_use('default')
+    style.configure("TCombobox", fieldbackground=BG_DARK, background=CARD_BG,
+                    foreground="black", font=("Helvetica", 10))
+
+    # ── Algorithm selector ──────────────────────────────────────────────────
+    algo_label = tk.Label(card_frame, text="Select Swarm Control Architecture:",
+                          font=("Helvetica", 11, "bold"), bg=CARD_BG, fg=TEXT_LIGHT)
+    algo_label.pack(anchor=tk.W, pady=(0, 4))
+
+    algo_options = [
         "Multi-Agent PPO (Shared Policy Baseline)",
         "State-Decomposition DDPG (SDDPG-NAV)",
         "Attention-Based Policy Distillation"
     ]
-    
-    # ttk styling for combobox to match dark theme partially
-    style = ttk.Style()
-    style.theme_use('default')
-    style.configure(
-        "TCombobox", 
-        fieldbackground=BG_DARK, 
-        background=CARD_BG, 
-        foreground="black",
-        font=("Helvetica", 10)
-    )
-    
-    combobox = ttk.Combobox(
-        card_frame, 
-        values=options, 
-        state="readonly", 
-        width=45, 
-        font=("Helvetica", 11)
-    )
-    combobox.set(options[0]) # Default to PPO Baseline
-    combobox.pack(pady=10, fill=tk.X)
-    
-    selected_option = {"value": None}
+    combobox = ttk.Combobox(card_frame, values=algo_options, state="readonly",
+                             width=50, font=("Helvetica", 10))
+    combobox.set(algo_options[0])
+    combobox.pack(pady=(0, 12), fill=tk.X)
+
+    # ── Scenario selector ───────────────────────────────────────────────────
+    scn_label = tk.Label(card_frame, text="Select Urban Scenario Environment:",
+                         font=("Helvetica", 11, "bold"), bg=CARD_BG, fg=TEXT_LIGHT)
+    scn_label.pack(anchor=tk.W, pady=(0, 4))
+
+    scn_options = [SCENARIO_LABELS[k] for k in SCENARIO_KEYS]
+    scn_combo = ttk.Combobox(card_frame, values=scn_options, state="readonly",
+                              width=50, font=("Helvetica", 10))
+    scn_combo.set(scn_options[0])   # Default: Downtown
+    scn_combo.pack(pady=(0, 4), fill=tk.X)
+
+    # Scenario description hint
+    scn_hint = tk.Label(card_frame,
+                        text="Tip: Each scenario uses a procedurally generated city with realistic buildings.",
+                        font=("Helvetica", 8, "italic"), bg=CARD_BG, fg=TEXT_MUTED)
+    scn_hint.pack(anchor=tk.W, pady=(0, 6))
+
+    selected_option = {"value": None, "scenario": SCENARIO_KEYS[0]}
     
     # Button callback
     def on_deploy():
         selected_option["value"] = combobox.get()
-        # Cleanly stop and destroy the Tkinter GUI to prevent any PyBullet context locks
+        # Map scenario label back to key
+        scn_lbl = scn_combo.get()
+        for k, lbl in SCENARIO_LABELS.items():
+            if lbl == scn_lbl:
+                selected_option["scenario"] = k
+                break
         root.quit()
         root.destroy()
         
@@ -137,7 +165,10 @@ def run_selector():
     root.mainloop()
     
     # Execute the selected simulation
-    choice = selected_option["value"]
+    choice   = selected_option["value"]
+    scenario = selected_option["scenario"]
+    _inject_scenario(scenario)   # set env var before algorithm imports env
+
     if choice == "Multi-Agent PPO (Shared Policy Baseline)":
         from algorithms.obstacle_avoidance.ppo_baseline import run_ppo_demo
         run_ppo_demo()
@@ -150,5 +181,49 @@ def run_selector():
     else:
         print("[ERROR] No valid selection made. Exiting.")
 
+def _inject_scenario(scenario_name: str):
+    """
+    Pass the chosen scenario to the algorithm demo environments via env var.
+    Each algorithm's run_*_demo() calls DroneSurveillanceEnv internally;
+    the env var is read in _build_demo_env_config() below, which algorithms
+    can call, or directly via env_config when they construct the environment.
+    """
+    os.environ['STIRS_SCENARIO'] = scenario_name
+    os.environ['STIRS_USE_SCENARIO_SYSTEM'] = '1'
+
+
+def build_scenario_env_config(base_config: dict = None) -> dict:
+    """
+    Helper for algorithm modules to pick up the scenario chosen in the GUI.
+    Merges scenario settings into a drone_env env_config dict.
+
+    Usage in ppo_baseline.py / state_decomp_ddpg.py / attention_distill.py:
+        from main_selector import build_scenario_env_config
+        env_cfg = build_scenario_env_config()
+        env = DroneSurveillanceEnv(..., env_config=env_cfg)
+    """
+    cfg = dict(base_config) if base_config else {}
+    scenario = os.environ.get('STIRS_SCENARIO', 'downtown')
+    use_sys  = os.environ.get('STIRS_USE_SCENARIO_SYSTEM', '0') == '1'
+    cfg['use_scenario_system'] = use_sys
+    cfg['scenario']            = scenario
+    return cfg
+
+
 if __name__ == "__main__":
-    run_selector()
+    # Direct --scenario launch (skip GUI)
+    if _CLI.scenario:
+        algo = _CLI.algorithm or 'ppo'
+        _inject_scenario(_CLI.scenario)
+        print(f"[STIRS] Launching scenario={_CLI.scenario}  algorithm={algo}")
+        if algo == 'ddpg':
+            from algorithms.obstacle_avoidance.state_decomp_ddpg import run_ddpg_demo
+            run_ddpg_demo()
+        elif algo == 'distill':
+            from algorithms.obstacle_avoidance.attention_distill import run_distill_demo
+            run_distill_demo()
+        else:
+            from algorithms.obstacle_avoidance.ppo_baseline import run_ppo_demo
+            run_ppo_demo()
+    else:
+        run_selector()

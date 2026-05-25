@@ -22,10 +22,15 @@ def run_distill_demo():
     print("  - Target Tracking Policy   : Pitch/Roll aligned with nearest ground boid")
     print("  - Attention Weighting      : Dynamic blending based on active LiDAR proximity risk")
     
-    print("\n[Simulation] Instantiating DroneSurveillanceEnv in GUI mode...")
-    env = DroneSurveillanceEnv(render_mode="human", fixed_layout=True)
+    import os as _os
+    _scenario = _os.environ.get('STIRS_SCENARIO', 'downtown')
+    _use_scn  = _os.environ.get('STIRS_USE_SCENARIO_SYSTEM', '0') == '1'
+    _scn_cfg  = {'use_scenario_system': _use_scn, 'scenario': _scenario} if _use_scn else {}
+    print(f"\n[Simulation] Scenario: {_scenario.upper() if _use_scn else 'legacy'}  "
+          f"Instantiating DroneSurveillanceEnv in GUI mode...")
+    env = DroneSurveillanceEnv(render_mode="human", fixed_layout=True, env_config=_scn_cfg)
     obs, info = env.reset()
-    
+
     print("\nRunning Policy Distillation simulation...")
     print("  Camera keys in PyBullet window:  1=Orbital  2=Top-Down  3=Cinematic  4=Close-Up")
     _CAM_MODES = [

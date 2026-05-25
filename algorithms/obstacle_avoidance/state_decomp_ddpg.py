@@ -133,6 +133,15 @@ def run_ddpg_demo():
     obs, info = env.reset()
     
     print("\nRunning SDDPG-NAV split-actor flight control simulation...")
+    print("  Camera keys in PyBullet window:  1=Orbital  2=Top-Down  3=Cinematic  4=Close-Up")
+    _CAM_MODES = [
+        ("ORBITAL",  18.0, -52, True),
+        ("TOP-DOWN", 22.0, -89, False),
+        ("CINEMATIC",14.0, -28, True),
+        ("CLOSE-UP",  9.0, -42, False),
+    ]
+    _VIEW_KEYS = {49: 0, 50: 1, 51: 2, 52: 3}
+    _cur_view = 0;  _view_txt_id = -1;  _cam_yaw = 35.0
     try:
         step = 0
         clash_count = 0
@@ -181,6 +190,30 @@ def run_ddpg_demo():
                 
                 pitch_cmd, roll_cmd, yaw_cmd, avoid_cmd, track_cmd = sddpg_actor(lidar_tensor, target_tensor, proximity_risk)
                 
+                # --- Mutual Swarm Avoidance ---
+                swarm_avoid_x = 0.0
+                swarm_avoid_y = 0.0
+                for other_agent in env.agents:
+                    if other_agent == agent_id:
+                        continue
+                    other_pos = obs[other_agent]["position"]
+                    diff = pos[:2] - other_pos[:2]
+                    dist_2d = np.linalg.norm(diff)
+                    if 0.01 < dist_2d < 2.5:  # 2.5m separation radius
+                        weight = 1.0 / (dist_2d * dist_2d)
+                        swarm_avoid_x += (diff[0] / dist_2d) * weight
+                        swarm_avoid_y += (diff[1] / dist_2d) * weight
+                
+                swarm_local_x = swarm_avoid_x * np.cos(yaw) + swarm_avoid_y * np.sin(yaw)
+                swarm_local_y = -swarm_avoid_x * np.sin(yaw) + swarm_avoid_y * np.cos(yaw)
+                swarm_mag = np.sqrt(swarm_local_x**2 + swarm_local_y**2)
+                if swarm_mag > 0:
+                    swarm_local_x = (swarm_local_x / swarm_mag) * min(swarm_mag, 1.0)
+                    swarm_local_y = (swarm_local_y / swarm_mag) * min(swarm_mag, 1.0)
+                    # Blend DDPG neural network commands with manual swarm avoidance steering
+                    pitch_cmd = 0.4 * pitch_cmd + 0.6 * swarm_local_x * 0.4
+                    roll_cmd = 0.4 * roll_cmd + 0.6 * swarm_local_y * 0.4
+                
                 # Active PD altitude controller to lock altitude at 2.0 meters aggressively during fast flight
                 z_target = 2.0
                 z_error = z_target - pos[2]
@@ -208,19 +241,42 @@ def run_ddpg_demo():
             except p.error:
                 break
             
-            # Orbital camera tracking
+            # ── Camera view-switch + apply ──────────────────────────────────
             if hasattr(env, 'client_id'):
                 try:
+                    keys = p.getKeyboardEvents(physicsClientId=env.client_id)
+                    for kc, ks in keys.items():
+                        if ks & (p.KEY_WAS_TRIGGERED | p.KEY_IS_DOWN) and kc in _VIEW_KEYS:
+                            new_view = _VIEW_KEYS[kc]
+                            if _cur_view != new_view:
+                                _cur_view = new_view
+                                _cam_yaw = 35.0
+                    all_pos = [obs[a]['position'] for a in env.agents]
+                    cx = float(np.mean([pp[0] for pp in all_pos]))
+                    cy = float(np.mean([pp[1] for pp in all_pos]))
+                    cz = float(max(np.mean([pp[2] for pp in all_pos]), 2.0))
+                    _vm = _CAM_MODES[_cur_view]
+                    if _vm[3]: _cam_yaw = (_cam_yaw + 0.12) % 360.0
                     p.resetDebugVisualizerCamera(
-                        cameraDistance=12.0,
-                        cameraPitch=-35,
-                        cameraYaw=(step * 2.0) % 360.0,
-                        cameraTargetPosition=[0.0, 0.0, 1.0],
+                        cameraDistance=_vm[1], cameraPitch=_vm[2],
+                        cameraYaw=_cam_yaw,
+                        cameraTargetPosition=[cx, cy, cz],
                         physicsClientId=env.client_id
                     )
+                    vlbl = (f"[{_vm[0]}] SDDPG | "
+                            f"RED:{obs['drone_0']['position'][2]:.1f}m "
+                            f"BLU:{obs['drone_1']['position'][2]:.1f}m "
+                            f"GRN:{obs['drone_2']['position'][2]:.1f}m  Keys:1 2 3 4")
+                    _lpos = [cx-7, cy-9.5, 0.4]
+                    if _view_txt_id != -1:
+                        _view_txt_id = p.addUserDebugText(vlbl, _lpos, [1.0,1.0,0.1], 1.3,
+                            replaceItemUniqueId=_view_txt_id, physicsClientId=env.client_id)
+                    else:
+                        _view_txt_id = p.addUserDebugText(vlbl, _lpos, [1.0,1.0,0.1], 1.3,
+                            physicsClientId=env.client_id)
                 except p.error:
                     break
-            time.sleep(0.1)
+            time.sleep(0.05)
     finally:
         print("\nClosing environment...")
         env.close()

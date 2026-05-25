@@ -1,0 +1,123 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# STIRS-2025 | Multi-UAV Surveillance Environment Configuration
+# Research: Attention-Guided Decentralized UAV Surveillance for Crowd Monitoring
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Active scenario: downtown | residential | event | mixed | industrial
+scenario: "downtown"
+
+# Enable the enhanced procedural scenario system
+use_scenario_system: true
+
+terrain:
+  city_size: [26.0, 26.0]   # meters — scaled for drone physics arena (was 500m conceptual)
+  block_size: 6.0            # meters per city block
+  road_width: 2.0            # meters per road lane
+  sidewalk_width: 0.8        # meters per sidewalk strip
+
+buildings:
+  height_range: [4.0, 16.0]  # min / max building height (meters)
+  density: "high"             # low | medium | high
+  style: "mixed"              # modern | traditional | mixed
+
+crowd:
+  enabled: true
+  count: 30                   # number of pedestrian boid agents
+  boundary: 10.0              # boid roam boundary radius (meters)
+
+weather:
+  wind:
+    enabled: true
+    base_speed: 0.4           # m/s — safe: 0.4, strong: 2.0
+    turbulence: 0.35
+  lighting:
+    time_of_day: "noon"       # morning | noon | afternoon | evening
+    shadows: true
+
+obstacles:
+  birds:
+    enabled: true
+    count: 8
+  trees:
+    enabled: true
+    count: 12
+  poles:
+    enabled: true
+  houses:
+    enabled: false            # Replaced by scenario building system
+
+arena:
+  xy_bound: 16.0              # Out-of-bounds XY threshold (meters)
+  z_min: 0.4                  # Minimum flight altitude (meters)
+  z_max: 18.0                 # Maximum flight altitude (meters)
+
+visual_quality:
+  detail_level: "high"        # low | medium | high (controls window bands, ledges, rooftop detail)
+  hud_enabled: true
+
+# ── Per-Scenario Parameter Overrides ────────────────────────────────────────
+scenarios:
+  downtown:
+    terrain:
+      city_size: [26.0, 26.0]
+      block_size: 6.0
+      road_width: 2.0
+    buildings:
+      height_range: [6.0, 18.0]
+      density: "high"
+    arena:
+      xy_bound: 15.0
+    crowd:
+      count: 50
+
+  residential:
+    terrain:
+      city_size: [24.0, 24.0]
+      block_size: 6.0
+      road_width: 2.0
+    buildings:
+      height_range: [3.0, 9.0]
+      density: "medium"
+    arena:
+      xy_bound: 14.0
+    crowd:
+      count: 25
+
+  event:
+    terrain:
+      city_size: [26.0, 26.0]
+      block_size: 7.0
+      road_width: 2.0
+    buildings:
+      height_range: [4.0, 12.0]
+      density: "medium"
+    arena:
+      xy_bound: 15.0
+    crowd:
+      count: 80
+
+  mixed:
+    terrain:
+      city_size: [24.0, 24.0]
+      block_size: 6.0
+      road_width: 2.0
+    buildings:
+      height_range: [3.0, 14.0]
+      density: "medium"
+    arena:
+      xy_bound: 14.0
+    crowd:
+      count: 35
+
+  industrial:
+    terrain:
+      city_size: [26.0, 26.0]
+      block_size: 8.0
+      road_width: 3.0
+    buildings:
+      height_range: [4.0, 10.0]
+      density: "low"
+    arena:
+      xy_bound: 15.0
+    crowd:
+      count: 10

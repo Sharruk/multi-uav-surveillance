@@ -190,6 +190,10 @@ class DroneSurveillanceEnv(gym.Env):
         "wind_base_speed":     0.4,    # SAFE: ~0.4N force (was 2.0 = drone-crashing)
         "num_houses":          6,      # Reduced: less clutter
         "num_tall_buildings":  3,      # Reduced: was 6, blocked entire camera view
+        # ── Scenario system (Phase 1) ────────────────────────────────────────
+        "use_scenario_system": False,  # Set True to use procedural city scenarios
+        "scenario":            "downtown",  # downtown|residential|event|mixed|industrial
+        "arena_xy_bound":      13.0,   # Overridden per scenario when system is active
     }
 
     def __init__(self, render_mode="headless", noise_params=None, fixed_layout=False,
@@ -266,10 +270,53 @@ class DroneSurveillanceEnv(gym.Env):
         self.bird_ids      = []   # All bird body IDs
         self.road_ids      = []   # Road/park plane body IDs (GUI only)
         self.tall_bld_ids  = []   # Extra tall building body IDs
+        self.furniture_ids = []   # Phase-2 street furniture body IDs
 
         # ── Wind system (initialised in reset() with optional seed) ───────────
         self.wind_system   = None
         self.bird_flock    = None  # BirdFlock instance (recreated each reset)
+
+        # ── Arena boundary (may be overridden by scenario system) ─────────────
+        self._arena_xy_bound = self.env_config.get("arena_xy_bound", 13.0)
+        self.building_specs  = []   # [{center, half_extents}] for crowd avoidance
+
+    def _spawn_scenario_environment(self):
+        """
+        Phase-1 scenario system: replace legacy random building spawning with a
+        procedurally generated urban environment (roads, sidewalks, architectural
+        buildings, scenario-specific extras).
+
+        Populates self.building_ids, self.tall_bld_ids, self.house_ids, and
+        self.building_specs in formats fully compatible with the existing
+        collision-detection and crowd-avoidance code.
+        Also updates self._arena_xy_bound so the out-of-bounds check expands
+        to match the new city footprint.
+        """
+        try:
+            from envs.scenarios import load_scenario
+        except ImportError:
+            import sys as _sys, os as _os
+            _sys.path.insert(0, _os.path.abspath(_os.path.join(_os.path.dirname(__file__), "..")))
+            from envs.scenarios import load_scenario
+
+        scenario_name = self.env_config.get("scenario", "downtown")
+        seed = 42 if self.fixed_layout else random.randint(0, 9999)
+        scn  = load_scenario(scenario_name, self.client_id, self.env_config, seed=seed)
+        result = scn.spawn()
+
+        self.building_ids   = result.get("building_ids", [])
+        self.tall_bld_ids   = result.get("tall_bld_ids",  [])
+        self.house_ids      = result.get("house_ids",     [])
+        self.building_specs = result.get("building_specs", [])
+        self.furniture_ids  = result.get("furniture_ids", [])
+        self._arena_xy_bound = result.get("arena_bound", 14.0)
+
+        if DEMO_MODE:
+            # Show scenario name as debug label
+            label = f"Scenario: {scenario_name.upper()}"
+            p.addUserDebugText(label, [-11.0, -11.0, 0.5],
+                               textColorRGB=[0.9, 0.8, 0.3], textSize=1.2,
+                               physicsClientId=self.client_id)
 
     def _spawn_buildings(self):
         """Spawns 8-15 randomized static 3D buildings as boxes forming an urban canyon, checking collisions."""
@@ -615,57 +662,70 @@ class DroneSurveillanceEnv(gym.Env):
             np.random.seed(42)
             random.seed(42)
 
-        # ── Spawn original urban buildings (2–8m) ─────────────────────────────
-        self._spawn_buildings()
+        # ── Building / terrain spawning ───────────────────────────────────────
+        use_scenario = self.env_config.get("use_scenario_system", False)
 
-        # Build exclusion list from drone init positions + existing buildings
-        exclusion_zones = [[dpos[0], dpos[1]] for dpos in self.drone_init_positions]
-        for spec in self.building_specs:
-            exclusion_zones.append(list(spec["center"]))
+        if use_scenario:
+            # ── Phase-1 procedural scenario system ────────────────────────────
+            self._spawn_scenario_environment()
+            # arena_xy_bound set inside _spawn_scenario_environment()
 
-        # ── Enhanced assets ───────────────────────────────────────────────────
+            # Build exclusion list from drone positions + scenario buildings
+            exclusion_zones = [[dpos[0], dpos[1]] for dpos in self.drone_init_positions]
+            for spec in self.building_specs:
+                exclusion_zones.append(list(spec["center"]))
 
-        # 1. Roads and parks (GUI only — purely decorative, no collision relevance)
-        if DEMO_MODE and self.env_config["enable_roads"]:
-            road_spawner = RoadAndParkSpawner(physics_client_id=self.client_id)
-            self.road_ids = road_spawner.spawn(arena=10.0)
+        else:
+            # ── Legacy random building spawning (unchanged) ───────────────────
+            self._arena_xy_bound = self.env_config.get("arena_xy_bound", 13.0)
+            self._spawn_buildings()
 
-        # 2. Extra tall landmark buildings (5–20m) — affects LiDAR and collisions
-        if self.env_config["num_tall_buildings"] > 0:
-            tall_spawner = BuildingSpawner(
-                physics_client_id=self.client_id,
-                exclusion_zones=exclusion_zones[:]
-            )
-            self.tall_bld_ids = tall_spawner.spawn(
-                num_buildings=self.env_config["num_tall_buildings"],
-                arena=9.0
-            )
-            # Register tall building positions as exclusions for subsequent spawners
-            for bid in self.tall_bld_ids:
-                try:
-                    pos_t, _ = p.getBasePositionAndOrientation(bid, physicsClientId=self.client_id)
-                    exclusion_zones.append([pos_t[0], pos_t[1]])
-                except Exception:
-                    pass
+            # Build exclusion list
+            exclusion_zones = [[dpos[0], dpos[1]] for dpos in self.drone_init_positions]
+            for spec in self.building_specs:
+                exclusion_zones.append(list(spec["center"]))
 
-        # 3. Small residential houses (3–5m) — affects LiDAR and collisions
-        if self.env_config["enable_houses"]:
-            house_spawner = HouseSpawner(
-                physics_client_id=self.client_id,
-                exclusion_zones=exclusion_zones[:]
-            )
-            self.house_ids = house_spawner.spawn(
-                num_houses=self.env_config["num_houses"],
-                arena=9.0
-            )
-            for bid in self.house_ids:
-                try:
-                    pos_h, _ = p.getBasePositionAndOrientation(bid, physicsClientId=self.client_id)
-                    exclusion_zones.append([pos_h[0], pos_h[1]])
-                except Exception:
-                    pass
+            # Legacy roads (GUI decorative)
+            if DEMO_MODE and self.env_config["enable_roads"]:
+                road_spawner = RoadAndParkSpawner(physics_client_id=self.client_id)
+                self.road_ids = road_spawner.spawn(arena=10.0)
+
+            # Legacy tall landmark buildings
+            if self.env_config["num_tall_buildings"] > 0:
+                tall_spawner = BuildingSpawner(
+                    physics_client_id=self.client_id,
+                    exclusion_zones=exclusion_zones[:]
+                )
+                self.tall_bld_ids = tall_spawner.spawn(
+                    num_buildings=self.env_config["num_tall_buildings"],
+                    arena=9.0
+                )
+                for bid in self.tall_bld_ids:
+                    try:
+                        pos_t, _ = p.getBasePositionAndOrientation(bid, physicsClientId=self.client_id)
+                        exclusion_zones.append([pos_t[0], pos_t[1]])
+                    except Exception:
+                        pass
+
+            # Legacy small houses
+            if self.env_config["enable_houses"]:
+                house_spawner = HouseSpawner(
+                    physics_client_id=self.client_id,
+                    exclusion_zones=exclusion_zones[:]
+                )
+                self.house_ids = house_spawner.spawn(
+                    num_houses=self.env_config["num_houses"],
+                    arena=9.0
+                )
+                for bid in self.house_ids:
+                    try:
+                        pos_h, _ = p.getBasePositionAndOrientation(bid, physicsClientId=self.client_id)
+                        exclusion_zones.append([pos_h[0], pos_h[1]])
+                    except Exception:
+                        pass
 
         # 4. Trees — affects LiDAR (trunks are solid collision cylinders)
+        _tree_arena = min(self._arena_xy_bound * 0.75, 11.0)
         if self.env_config["enable_trees"]:
             tree_spawner = TreeSpawner(
                 physics_client_id=self.client_id,
@@ -673,7 +733,7 @@ class DroneSurveillanceEnv(gym.Env):
             )
             self.tree_ids = tree_spawner.spawn(
                 num_trees=self.env_config["num_trees"],
-                arena=9.0
+                arena=_tree_arena
             )
 
         # 5. Electric poles (GUI enrichment + minor LiDAR hits from thin trunks)
@@ -682,11 +742,12 @@ class DroneSurveillanceEnv(gym.Env):
                 physics_client_id=self.client_id,
                 exclusion_zones=exclusion_zones[:]
             )
-            self.pole_ids = pole_spawner.spawn(arena=9.0)
+            self.pole_ids = pole_spawner.spawn(arena=_tree_arena)
 
         # 6. Spawn ground crowd (original moving boids)
+        _crowd_boundary = min(self._arena_xy_bound * 0.70, 10.0)
         self.crowd = RandomCrowd(
-            num_boids=12, boundary=8.0,
+            num_boids=12, boundary=_crowd_boundary,
             physics_client_id=self.client_id,
             building_specs=self.building_specs
         )
@@ -733,9 +794,10 @@ class DroneSurveillanceEnv(gym.Env):
             # Wind direction indicator text (compass rose style)
             if self.wind_system is not None:
                 wind_dir = self.wind_system.get_direction_degrees()
+                _lbl_pos = -self._arena_xy_bound * 0.72
                 p.addUserDebugText(
                     text=f"Wind: {wind_dir:.0f}° | {self.env_config['wind_base_speed']:.1f} m/s",
-                    textPosition=[-9.5, -9.5, 1.5],
+                    textPosition=[_lbl_pos, _lbl_pos, 1.5],
                     textColorRGB=[0.8, 0.9, 1.0],
                     textSize=1.0,
                     physicsClientId=self.client_id
@@ -743,17 +805,20 @@ class DroneSurveillanceEnv(gym.Env):
 
         # Set initial camera — nice 3/4 orbital view matching the reference image
         if DEMO_MODE:
+            _cam_dist = max(18.0, self._arena_xy_bound * 1.4)
             p.resetDebugVisualizerCamera(
-                cameraDistance=18.0,
+                cameraDistance=_cam_dist,
                 cameraPitch=-52,
                 cameraYaw=35,
                 cameraTargetPosition=[0.0, 0.0, 2.5],
                 physicsClientId=self.client_id
             )
             # Key-hint banner shown in 3D world space
+            _hint_x = -self._arena_xy_bound * 0.65
+            _hint_y = -self._arena_xy_bound * 0.75
             p.addUserDebugText(
                 text="CAMERA: [1] Orbital  [2] Top-Down  [3] Cinematic  [4] Close-Up",
-                textPosition=[-8.5, -9.8, 0.3],
+                textPosition=[_hint_x, _hint_y, 0.3],
                 textColorRGB=[1.0, 1.0, 0.2],
                 textSize=1.2,
                 physicsClientId=self.client_id
@@ -962,9 +1027,10 @@ class DroneSurveillanceEnv(gym.Env):
 
             # ── C. Out-of-Bounds checking ────────────────────────────────────
             out_of_bounds = False
-            # Extended height limit to 15m so drones have room to manoeuvre
-            if (abs(pos_np[0]) > 13.0 or abs(pos_np[1]) > 13.0
-                    or pos_np[2] < 0.4 or pos_np[2] > 15.0):
+            xy_lim = self._arena_xy_bound
+            z_max  = self.env_config.get("arena", {}).get("z_max", 18.0)
+            if (abs(pos_np[0]) > xy_lim or abs(pos_np[1]) > xy_lim
+                    or pos_np[2] < 0.4 or pos_np[2] > z_max):
                 out_of_bounds = True
                 collision_penalty -= 10.0
 

@@ -42,26 +42,34 @@ UAV decision-making operates under a **Partially Observable Markov Decision Proc
 
 ```
 multi-uav-surveillance/
-├── .venv/                  # Virtual Python environment
-├── main_selector.py        # ✅ PRIMARY: Interactive GUI algorithm selector panel
+├── main_selector.py            # PRIMARY: GUI selector + --scenario / --algorithm CLI flags
 ├── envs/
-│   └── drone_env.py        # Gymnasium Multi-Agent Environment with 10x physical sub-stepping
+│   ├── drone_env.py            # Gymnasium Multi-Agent Environment (PettingZoo ParallelEnv)
+│   ├── environment_assets.py   # Legacy asset spawners (trees, birds, wind, poles)
+│   ├── terrain/
+│   │   ├── city_layout.py      # Grid-based city layout generator (3×3 block grid)
+│   │   └── terrain_generator.py# Road surfaces, sidewalks, park patches, road markings
+│   ├── structures/
+│   │   ├── buildings.py        # EnhancedBuildingSpawner (5 types, realistic palettes)
+│   │   └── street_furniture.py # Phase 2: street lights, traffic signals, cars, benches…
+│   └── scenarios/
+│       ├── __init__.py         # load_scenario() factory with YAML config merge
+│       ├── scenario_base.py    # BaseScenario: layout → terrain → buildings → furniture
+│       ├── downtown.py         # Dense commercial, arena 15 m, plaza + fountain extras
+│       ├── residential.py      # Low-rise, parks, arena 14 m, playground extras
+│       ├── event.py            # Large plaza, arena 15 m, stage + tent extras
+│       ├── mixed.py            # Varied heights, arena 14 m, street market extras
+│       └── industrial.py       # Warehouses, arena 15 m, containers + crane extras
+├── config/
+│   └── environment_config.yaml # Per-scenario YAML overrides (terrain, buildings, arena)
 ├── algorithms/
-│   ├── obstacle_avoidance/ # Active milestone algorithms: PPO, SDDPG, and Distillation
-│   ├── swarm_coordination/ # Future milestone scope
-│   ├── collision_deconfliction/ # Future milestone scope
-│   └── target_tracking/    # Future milestone scope
-├── train.py                # Ray RLlib training scaffold + ARReSVG policy
-├── requirements.txt        # Accurate dependency list (auto-generated from imports)
-├── README.md               # Setup & usage guide (this file)
-├── CURRENT_STATUS.md       # Team-readable project state tracker
-├── CHANGELOG.md            # Update history (what changed, why, next steps)
-├── TASKS.md                # Task tracker (completed / pending / research ideas)
-├── project.md              # Project outline & research requirements
-├── status.md               # Phase-by-phase completion log
-├── task.md                 # Phase checklist log
-├── walkthrough.md          # Technical implementation details
-└── metrics.md              # STIRS-2025 target benchmarks
+│   └── obstacle_avoidance/     # PPO baseline, SDDPG-NAV, Attention Distillation
+├── scripts/
+│   └── capture_screenshots.py  # Headless screenshot + FPS benchmark for all scenarios
+├── screenshots/                # Auto-generated PNG renders (6 images)
+├── train.py                    # Ray RLlib training scaffold + ARReSVG policy
+├── requirements.txt            # Dependency list
+└── README.md                   # This file
 ```
 
 ---
@@ -136,27 +144,90 @@ If you prefer to run it locally, follow the instructions in the Troubleshooting 
 
 ---
 
+## 🌆 Urban Scenario System (Phase 1 + 2)
+
+The simulation includes a professional-grade procedural urban environment with 5 research-ready city scenarios.
+
+### Scenarios
+
+| Scenario | Description | Arena |
+|:---------|:------------|:------|
+| `downtown` | Dense commercial high-rises, glass towers, central plaza | 15 m |
+| `residential` | Low-rise brick housing, parks, playgrounds | 14 m |
+| `event` | Large open plaza with stage, tent canopies, dense crowd | 15 m |
+| `mixed` | Varied building heights, street markets | 14 m |
+| `industrial` | Warehouses, stacked shipping containers, crane | 15 m |
+
+### Phase 2 Street Furniture (all visual-only, zero physics overhead)
+
+Every scenario automatically receives:
+- **Street lights** — 7.5 m LED poles with warm amber glow, both road sides
+- **Traffic signals** — 3-light signals (red active) at all 9 grid intersections
+- **Utility poles** — Brown cross-arm poles with overhead power lines along roads
+- **Parked cars** — Realistic palette (white/silver/black/blue/red) in lots and roadside
+- **Benches** — Wood + metal benches in every park and plaza block
+- **Bus stops** — Glass-panel shelters at 3 road-edge locations
+- **Trash bins** — Dark green cylindrical bins near benches
+- **Varied sidewalk trees** — Randomised trunk height (1.8–4.2 m), 5 green shades
+
+### Performance (headless, 3 drones)
+
+| Scenario | FPS | Status |
+|:---------|----:|:-------|
+| downtown | 101.5 | PASS ≥ 100 |
+| residential | 124.7 | PASS ≥ 100 |
+| event | 141.2 | PASS ≥ 100 |
+| mixed | 121.1 | PASS ≥ 100 |
+| industrial | 125.3 | PASS ≥ 100 |
+| downtown (5-drone est.) | 95.2 | PASS ≥ 20 |
+
+---
+
 ## 🚀 Running the Simulation
 
-### Option A — Interactive GUI Selection Testbed (Recommended)
+### Option A — Interactive GUI Selector (Recommended)
 
-Launches the native dark-themed Tkinter control panel to let you choose and deploy any of the three core drone obstacle avoidance algorithms (Multi-Agent PPO, State-Decomposition DDPG, or Attention Policy Distillation) in 3D GUI mode:
+Launches the dark-themed Tkinter control panel. Choose a scenario and algorithm, then click **Launch Simulation**:
 
 ```powershell
 .\.venv\Scripts\python.exe main_selector.py
 ```
 
-*Select your configuration in the dropdown, click **Launch Simulation**, and watch the drones bank, tilt, steer, and track ground crowd targets in real-time.*
+### Option B — Direct CLI Launch
 
-### Option B — Headless Environment Validation (No Window)
+Skip the GUI and launch a specific scenario + algorithm directly:
 
-Test the raw environment physics, sub-stepping, occupancy grids, and observations without a GUI window:
+```powershell
+# Downtown with default algorithm (PPO)
+.\.venv\Scripts\python.exe main_selector.py --scenario downtown
+
+# Event scenario with SDDPG-NAV
+.\.venv\Scripts\python.exe main_selector.py --scenario event --algorithm ddpg
+
+# Residential with Attention Distillation
+.\.venv\Scripts\python.exe main_selector.py --scenario residential --algorithm distill
+```
+
+Available `--scenario` values: `downtown`, `residential`, `event`, `mixed`, `industrial`
+Available `--algorithm` values: `ppo`, `ddpg`, `distill`
+
+### Option C — Headless Environment Validation (No Window)
+
+Test physics, sub-stepping, occupancy grids, and observations without a GUI:
 
 ```powershell
 .\.venv\Scripts\python.exe envs/drone_env.py
 ```
 
-This runs a quick **10-step trial** in PyBullet's headless DIRECT mode and prints the local occupancy grid as ASCII art in the console.
+### Option D — Screenshot + FPS Benchmark
+
+Capture high-quality renders of all 5 scenarios and benchmark step rate:
+
+```powershell
+.\.venv\Scripts\python.exe scripts/capture_screenshots.py
+```
+
+Output saved to `screenshots/` (6 PNG files).
 
 ---
 

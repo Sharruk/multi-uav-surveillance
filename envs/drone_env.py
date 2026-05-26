@@ -272,6 +272,11 @@ class DroneSurveillanceEnv(gym.Env):
         self.tall_bld_ids  = []   # Extra tall building body IDs
         self.furniture_ids = []   # Phase-2 street furniture body IDs
 
+        # ── Phase-3 dynamics ──────────────────────────────────────────────────
+        self.layout     = None   # CityLayout from scenario system
+        self.crowd_sim  = None   # CrowdSimulator (scenario mode)
+        self.boid_birds = None   # BoidBirds with flocking (scenario mode)
+
         # ── Wind system (initialised in reset() with optional seed) ───────────
         self.wind_system   = None
         self.bird_flock    = None  # BirdFlock instance (recreated each reset)
@@ -310,6 +315,7 @@ class DroneSurveillanceEnv(gym.Env):
         self.building_specs = result.get("building_specs", [])
         self.furniture_ids  = result.get("furniture_ids", [])
         self._arena_xy_bound = result.get("arena_bound", 14.0)
+        self.layout         = result.get("layout", None)
 
         if DEMO_MODE:
             # Show scenario name as debug label
@@ -635,6 +641,10 @@ class DroneSurveillanceEnv(gym.Env):
         self.bird_ids.clear()
         self.road_ids.clear()
         self.tall_bld_ids.clear()
+        # Phase-3 dynamics: reset each episode (p.resetSimulation() follows)
+        self.crowd_sim  = None
+        self.boid_birds = None
+        self.layout     = None
 
         p.resetSimulation(physicsClientId=self.client_id)
         p.setGravity(0.0, 0.0, -9.81, physicsClientId=self.client_id)
@@ -744,24 +754,67 @@ class DroneSurveillanceEnv(gym.Env):
             )
             self.pole_ids = pole_spawner.spawn(arena=_tree_arena)
 
-        # 6. Spawn ground crowd (original moving boids)
+        # 6. Spawn ground crowd
+        # In scenario mode CrowdSimulator handles pedestrians; keep legacy at 0 boids
         _crowd_boundary = min(self._arena_xy_bound * 0.70, 10.0)
+        _num_boids = 0 if use_scenario else 12
         self.crowd = RandomCrowd(
-            num_boids=12, boundary=_crowd_boundary,
+            num_boids=_num_boids, boundary=_crowd_boundary,
             physics_client_id=self.client_id,
             building_specs=self.building_specs
         )
 
-        # 7. Flying bird flock (real-world random altitude behaviour)
-        if self.env_config["enable_birds"]:
+        # 7. Flying bird flock
+        if use_scenario and self.env_config["enable_birds"]:
+            # Phase 3: Boids flocking replaces legacy random-walk flock in scenario mode
+            try:
+                from envs.dynamics.birds import BoidBirds
+            except ImportError:
+                import sys as _sys2, os as _os2
+                _sys2.path.insert(0, _os2.path.abspath(
+                    _os2.path.join(_os2.path.dirname(__file__), "..")))
+                from envs.dynamics.birds import BoidBirds
+            _bird_seed = 42 if self.fixed_layout else random.randint(0, 9999)
+            self.boid_birds = BoidBirds(
+                self.client_id,
+                num_birds=self.env_config["num_birds"],
+                altitude_range=(3.0, 7.0),
+                building_specs=self.building_specs,
+                rng=np.random.default_rng(_bird_seed + 30)
+            )
+            self.bird_ids = self.boid_birds.spawn(arena=self._arena_xy_bound * 0.8)
+            self.bird_flock = None
+        elif self.env_config["enable_birds"]:
+            # Legacy: random-altitude bird flock (non-scenario mode)
             self.bird_flock = BirdFlock(
                 physics_client_id=self.client_id,
                 num_birds=self.env_config["num_birds"]
             )
-            self.bird_ids = self.bird_flock.spawn(arena=8.5)
+            self.bird_ids  = self.bird_flock.spawn(arena=8.5)
+            self.boid_birds = None
         else:
             self.bird_flock = None
-            self.bird_ids = []
+            self.boid_birds = None
+            self.bird_ids   = []
+
+        # Phase 3: Advanced crowd simulation (scenario mode only)
+        if use_scenario and self.layout is not None:
+            try:
+                from envs.dynamics.crowd_simulator import CrowdSimulator
+            except ImportError:
+                import sys as _sys3, os as _os3
+                _sys3.path.insert(0, _os3.path.abspath(
+                    _os3.path.join(_os3.path.dirname(__file__), "..")))
+                from envs.dynamics.crowd_simulator import CrowdSimulator
+            _crowd_seed = 42 if self.fixed_layout else random.randint(0, 9999)
+            scenario_name = self.env_config.get("scenario", "downtown")
+            self.crowd_sim = CrowdSimulator(
+                self.client_id, self.layout, scenario_name,
+                self.building_specs,
+                rng=np.random.default_rng(_crowd_seed + 20)
+            )
+        else:
+            self.crowd_sim = None
 
         # 8. Wind system (fresh instance per episode — new wind direction)
         if self.env_config["enable_wind_physics"]:
@@ -848,7 +901,13 @@ class DroneSurveillanceEnv(gym.Env):
         # 1. Update ground boid crowd positions (once per control step — original)
         self.crowd.update()
 
-        # 2. Update flying bird flock positions (real-world altitude cycling)
+        # Phase 3: Advanced dynamics updates
+        if self.crowd_sim is not None:
+            self.crowd_sim.update(dt=0.02)
+        if self.boid_birds is not None:
+            self.boid_birds.update(dt=0.02, arena=self._arena_xy_bound)
+
+        # 2. Update flying bird flock positions (legacy mode only)
         if self.bird_flock is not None:
             self.bird_flock.update(dt=0.02, arena=9.5)
 
@@ -911,6 +970,8 @@ class DroneSurveillanceEnv(gym.Env):
         infos       = {}
 
         boid_positions = [b['pos'] for b in self.crowd.boids]
+        if self.crowd_sim is not None:
+            boid_positions = boid_positions + self.crowd_sim.boid_positions
 
         for agent_id in self.agents:
             drone_id = self.drone_ids[agent_id]

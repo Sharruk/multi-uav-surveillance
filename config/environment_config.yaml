@@ -20,24 +20,61 @@ buildings:
   density: "high"             # low | medium | high
   style: "mixed"              # modern | traditional | mixed
 
+# ── Phase-3 Crowd Simulation ─────────────────────────────────────────────────
+# CrowdSimulator in envs/dynamics/crowd_simulator.py uses SCENARIO_CONFIGS
+# (hardcoded defaults) but reads from here if further customisation is needed.
 crowd:
   enabled: true
-  count: 30                   # number of pedestrian boid agents
-  boundary: 10.0              # boid roam boundary radius (meters)
 
+  downtown:
+    total_agents: 15
+    zones:
+      - {type: "sidewalk",  count: 10}
+      - {type: "bus_stop",  count: 5}
+
+  residential:
+    total_agents: 8
+    zones:
+      - {type: "park",     count: 5}
+      - {type: "sidewalk", count: 3}
+
+  event:
+    total_agents: 80
+    zones:
+      - {type: "plaza_dense", count: 60}
+      - {type: "sidewalk",    count: 20}
+
+  mixed:
+    total_agents: 35
+    zones:
+      - {type: "sidewalk", count: 25}
+      - {type: "park",     count: 10}
+
+  industrial:
+    total_agents: 10
+    zones:
+      - {type: "sidewalk", count: 8}
+      - {type: "park",     count: 2}
+
+# ── Phase-3 Wind Dynamics ────────────────────────────────────────────────────
 weather:
   wind:
     enabled: true
-    base_speed: 0.4           # m/s — safe: 0.4, strong: 2.0
-    turbulence: 0.35
+    base_speed: 0.4           # m/s — safe: 0.4, noticeable: 1.5, strong: 3.0
+    direction: [1, 0.5, 0]   # [x, y, z] — northeast wind (normalised internally)
+    turbulence: 0.35          # fraction of base_speed used as Gaussian std
+    altitude_factor: 1.5      # wind at 10 m altitude = 1.5× base_speed
   lighting:
     time_of_day: "noon"       # morning | noon | afternoon | evening
     shadows: true
 
+# ── Phase-3 Bird Obstacles ───────────────────────────────────────────────────
 obstacles:
   birds:
     enabled: true
     count: 8
+    altitude_range: [3, 7]    # meters — UAV operating zone
+    use_boids: true            # true = BoidBirds flocking; false = legacy random walk
   trees:
     enabled: true
     count: 12
@@ -67,8 +104,6 @@ scenarios:
       density: "high"
     arena:
       xy_bound: 15.0
-    crowd:
-      count: 50
 
   residential:
     terrain:
@@ -80,8 +115,6 @@ scenarios:
       density: "medium"
     arena:
       xy_bound: 14.0
-    crowd:
-      count: 25
 
   event:
     terrain:
@@ -93,8 +126,6 @@ scenarios:
       density: "medium"
     arena:
       xy_bound: 15.0
-    crowd:
-      count: 80
 
   mixed:
     terrain:
@@ -106,8 +137,6 @@ scenarios:
       density: "medium"
     arena:
       xy_bound: 14.0
-    crowd:
-      count: 35
 
   industrial:
     terrain:
@@ -119,5 +148,3 @@ scenarios:
       density: "low"
     arena:
       xy_bound: 15.0
-    crowd:
-      count: 10

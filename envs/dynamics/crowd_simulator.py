@@ -61,7 +61,7 @@ class CrowdSimulator:
         },
         'event': {
             'zones': [
-                {'type': 'plaza_dense', 'count': 60},
+                {'type': 'plaza_dense', 'count': 50},   # dense plaza (50-100 range)
                 {'type': 'sidewalk',    'count': 20},
             ]
         },
@@ -94,9 +94,10 @@ class CrowdSimulator:
         self.building_specs = building_specs or []
         self.rng            = rng or np.random.default_rng(42)
 
-        # Pre-create shared collision / visual shapes (body uses collision for LiDAR)
+        # Sphere collision is analytically faster for raycast intersection than cylinder.
+        # Agents are detectable by LiDAR when drones descend below ~1.5 m altitude.
         self._col_shape = p.createCollisionShape(
-            p.GEOM_CYLINDER, radius=self._BODY_R, height=self._BODY_H * 2.0,
+            p.GEOM_SPHERE, radius=self._BODY_R + 0.03,   # 0.15 m — same as RandomCrowd
             physicsClientId=client_id)
         self._vis_body = p.createVisualShape(
             p.GEOM_CYLINDER, radius=self._BODY_R, length=self._BODY_H * 2.0,

@@ -12,6 +12,12 @@ _parser.add_argument('--scenario', default=None,
 _parser.add_argument('--algorithm', default=None,
                      choices=['ppo', 'ddpg', 'distill'],
                      help='Algorithm shorthand when used with --scenario')
+_parser.add_argument('--record', action='store_true',
+                     help='Record simulation as MP4 video (requires imageio[ffmpeg] or opencv)')
+_parser.add_argument('--screenshot', action='store_true',
+                     help='Capture 4-angle screenshots at simulation start')
+_parser.add_argument('--output-dir', default='outputs/',
+                     help='Directory for --record / --screenshot output (default: outputs/)')
 _CLI, _ = _parser.parse_known_args()
 
 
@@ -208,6 +214,34 @@ def build_scenario_env_config(base_config: dict = None) -> dict:
     cfg['use_scenario_system'] = use_sys
     cfg['scenario']            = scenario
     return cfg
+
+
+def _apply_recording_flags(env, scenario_name: str):
+    """
+    If --screenshot or --record flags are set, initialise the relevant tools
+    and attach them to the env instance so the demo loop can use them.
+
+    Callers check env._recorder / env._screenshot_tool after this call.
+    """
+    env._recorder       = None
+    env._screenshot_tool = None
+    output_dir = _CLI.output_dir
+
+    if _CLI.screenshot:
+        from utils.screenshot_tool import ScreenshotTool
+        tool = ScreenshotTool(output_dir=os.path.join(output_dir, "screenshots"))
+        env._screenshot_tool = tool
+        print(f"[STIRS] Screenshots enabled → {tool.output_dir}")
+        # Capture immediately (env is already reset by demo)
+        paths = tool.capture_scenario(env.client_id, scenario_name)
+        for angle, path in paths.items():
+            print(f"  {angle}: {path}")
+
+    if _CLI.record:
+        from utils.video_recorder import VideoRecorder
+        rec = VideoRecorder(output_dir=os.path.join(output_dir, "videos"), fps=30)
+        env._recorder = rec
+        print(f"[STIRS] Recording enabled → {rec.output_dir}")
 
 
 if __name__ == "__main__":

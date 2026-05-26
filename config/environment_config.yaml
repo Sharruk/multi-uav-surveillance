@@ -1,0 +1,150 @@
+# ═══════════════════════════════════════════════════════════════════════════════
+# STIRS-2025 | Multi-UAV Surveillance Environment Configuration
+# Research: Attention-Guided Decentralized UAV Surveillance for Crowd Monitoring
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Active scenario: downtown | residential | event | mixed | industrial
+scenario: "downtown"
+
+# Enable the enhanced procedural scenario system
+use_scenario_system: true
+
+terrain:
+  city_size: [26.0, 26.0]   # meters — scaled for drone physics arena (was 500m conceptual)
+  block_size: 6.0            # meters per city block
+  road_width: 2.0            # meters per road lane
+  sidewalk_width: 0.8        # meters per sidewalk strip
+
+buildings:
+  height_range: [4.0, 16.0]  # min / max building height (meters)
+  density: "high"             # low | medium | high
+  style: "mixed"              # modern | traditional | mixed
+
+# ── Phase-3 Crowd Simulation ─────────────────────────────────────────────────
+# CrowdSimulator in envs/dynamics/crowd_simulator.py uses SCENARIO_CONFIGS
+# (hardcoded defaults) but reads from here if further customisation is needed.
+crowd:
+  enabled: true
+
+  downtown:
+    total_agents: 15
+    zones:
+      - {type: "sidewalk",  count: 10}
+      - {type: "bus_stop",  count: 5}
+
+  residential:
+    total_agents: 8
+    zones:
+      - {type: "park",     count: 5}
+      - {type: "sidewalk", count: 3}
+
+  event:
+    total_agents: 80
+    zones:
+      - {type: "plaza_dense", count: 60}
+      - {type: "sidewalk",    count: 20}
+
+  mixed:
+    total_agents: 35
+    zones:
+      - {type: "sidewalk", count: 25}
+      - {type: "park",     count: 10}
+
+  industrial:
+    total_agents: 10
+    zones:
+      - {type: "sidewalk", count: 8}
+      - {type: "park",     count: 2}
+
+# ── Phase-3 Wind Dynamics ────────────────────────────────────────────────────
+weather:
+  wind:
+    enabled: true
+    base_speed: 0.4           # m/s — safe: 0.4, noticeable: 1.5, strong: 3.0
+    direction: [1, 0.5, 0]   # [x, y, z] — northeast wind (normalised internally)
+    turbulence: 0.35          # fraction of base_speed used as Gaussian std
+    altitude_factor: 1.5      # wind at 10 m altitude = 1.5× base_speed
+  lighting:
+    time_of_day: "noon"       # morning | noon | afternoon | evening
+    shadows: true
+
+# ── Phase-3 Bird Obstacles ───────────────────────────────────────────────────
+obstacles:
+  birds:
+    enabled: true
+    count: 8
+    altitude_range: [3, 7]    # meters — UAV operating zone
+    use_boids: true            # true = BoidBirds flocking; false = legacy random walk
+  trees:
+    enabled: true
+    count: 12
+  poles:
+    enabled: true
+  houses:
+    enabled: false            # Replaced by scenario building system
+
+arena:
+  xy_bound: 16.0              # Out-of-bounds XY threshold (meters)
+  z_min: 0.4                  # Minimum flight altitude (meters)
+  z_max: 18.0                 # Maximum flight altitude (meters)
+
+visual_quality:
+  detail_level: "high"        # low | medium | high (controls window bands, ledges, rooftop detail)
+  hud_enabled: true
+
+# ── Per-Scenario Parameter Overrides ────────────────────────────────────────
+scenarios:
+  downtown:
+    terrain:
+      city_size: [26.0, 26.0]
+      block_size: 6.0
+      road_width: 2.0
+    buildings:
+      height_range: [6.0, 18.0]
+      density: "high"
+    arena:
+      xy_bound: 15.0
+
+  residential:
+    terrain:
+      city_size: [24.0, 24.0]
+      block_size: 6.0
+      road_width: 2.0
+    buildings:
+      height_range: [3.0, 9.0]
+      density: "medium"
+    arena:
+      xy_bound: 14.0
+
+  event:
+    terrain:
+      city_size: [26.0, 26.0]
+      block_size: 7.0
+      road_width: 2.0
+    buildings:
+      height_range: [4.0, 12.0]
+      density: "medium"
+    arena:
+      xy_bound: 15.0
+
+  mixed:
+    terrain:
+      city_size: [24.0, 24.0]
+      block_size: 6.0
+      road_width: 2.0
+    buildings:
+      height_range: [3.0, 14.0]
+      density: "medium"
+    arena:
+      xy_bound: 14.0
+
+  industrial:
+    terrain:
+      city_size: [26.0, 26.0]
+      block_size: 8.0
+      road_width: 3.0
+    buildings:
+      height_range: [4.0, 10.0]
+      density: "low"
+    arena:
+      xy_bound: 15.0

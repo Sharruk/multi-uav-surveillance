@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  training:
+    build: .
+    container_name: multi_uav_training
+    command: python train.py
+    volumes:
+      - .:/app
+      - /app/venv
+      - /app/venv310
+  simulation:
+    build: .
+    container_name: multi_uav_simulation
+    environment:
+      - HEADLESS=1
+    # Force headless mode by setting an environment variable if your code supports it
+    # OR run standard train.py / headless simulation
+    command: python drone_env.py
+    volumes:
+      - .:/app
+      - /app/venv
+      - /app/venv310
